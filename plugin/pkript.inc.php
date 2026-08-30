@@ -1,9 +1,9 @@
 <?php
-// $Id: pkript.inc.php,v 0.3 2026/08/30 00:00:00 Pitan Exp $
+// $Id: pkript.inc.php,v 0.1 2026/08/30 23:02:21 WikiChree.COM Team Exp $
 
 /**
-* @link https://blog.pitan76.net/?Pkript
-* @author Pitan
+* @link https://wikichree.com/guide/?Pkript
+* @author WikiChree.COM Team
 * @license https://opensource.org/license/mit MIT
 */
 
