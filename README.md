@@ -21,8 +21,8 @@ plugin/
 
 1. スクリプトを作成します（ファイルまたはWikiページのどちらでも動作します）。
 
-- ファイル: `plugin/pkript/script/hello.js`
-- ページ: `:config/pkript/script/hello`
+- ファイル: `plugin/pkript/script/hello.js` (ダイレクトスクリプトと呼ぶ)
+- ページ: `:config/pkript/script/hello` (ページスクリプトと呼ぶ)
 
 ```javascript
 function plugin_hello_convert() {
