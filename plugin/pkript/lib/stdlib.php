@@ -41,6 +41,9 @@ trait Pkript_Stdlib
 		'get_existpages' => 'wiki.pages',
 		'encode' => 'wiki.encode',
 		'decode' => 'wiki.decode',
+		'get_filetime' => 'wiki.time',
+		'is_freeze' => 'wiki.isFrozen',
+		'format_date' => 'date.format',
 	);
 
 	private static function globalFunctions()
@@ -60,6 +63,8 @@ trait Pkript_Stdlib
 	{
 		return array(
 			'html' => array('escape', 'br', 'strip'),
+			'JSON' => array('stringify', 'parse'),
+			'date' => array('format', 'now'),
 			'Math' => array('floor', 'ceil', 'round', 'abs', 'min', 'max', 'random'),
 			'Object' => array('keys', 'values', 'has'),
 			'wiki' => array(
@@ -74,7 +79,10 @@ trait Pkript_Stdlib
 				'write',
 				'append',
 				'token',
-				'canWrite'
+				'canWrite',
+				'time',
+				'isFrozen',
+				'uri'
 			),
 		);
 	}
@@ -102,6 +110,12 @@ trait Pkript_Stdlib
 					'substring',
 					'slice',
 					'charAt',
+					'at',
+					'lastIndexOf',
+					'padStart',
+					'padEnd',
+					'trimStart',
+					'trimEnd',
 					'repeat',
 					'spanWhile',
 					'spanUntil',
@@ -291,6 +305,19 @@ trait Pkript_Stdlib
 			case 'wiki.pages':
 				return new Pkript_Arr($this->wikiPages($this->strArg($args, 0, ''), $node));
 
+			case 'wiki.time':
+				return $this->wikiTime($this->strArg($args, 0), $node);
+
+			case 'wiki.isFrozen':
+				return $this->wikiIsFrozen($this->strArg($args, 0), $node);
+
+			case 'wiki.uri':
+				return $this->wikiUri(
+					$this->strArg($args, 0, ''),
+					self::toBool($this->arg($args, 1, FALSE)),
+					$node
+				);
+
 			case 'wiki.token':
 				return plugin_pkript_token();
 
@@ -323,6 +350,28 @@ trait Pkript_Stdlib
 				// Invalid UTF-8 would send the whole output down the
 				// sanitizer's escape-everything fallback, so drop it instead
 				return mb_check_encoding($bytes, SOURCE_ENCODING) ? $bytes : '';
+
+			// --- date ---
+			case 'date.now':
+				return self::wikiNow();
+
+			case 'date.format':
+				return $this->dateFormat(
+					(int) $this->numArg($args, 0, $node, self::wikiNow()),
+					$this->arg($args, 1, NULL),
+					$node
+				);
+
+			// --- JSON ---
+			case 'JSON.stringify':
+				return $this->jsonStringify(
+					$this->arg($args, 0, NULL),
+					$this->arg($args, 1, 0),
+					$node
+				);
+
+			case 'JSON.parse':
+				return $this->jsonParse($this->strArg($args, 0), $node);
 
 			// --- PHP argument helpers ---
 			case 'func_get_args':
@@ -604,6 +653,244 @@ trait Pkript_Stdlib
 		return $this->$handler($recv, $name, $args, $node);
 	}
 
+	/////////////////////////////////////////////
+	// Time
+
+	/**
+	 * PukiWiki keeps times as "seconds since the epoch, minus the server's
+	 * offset", and adds ZONETIME back when it prints one. wiki.time() and
+	 * date.now() both hand out that value, and date.format() reads it, so the
+	 * three agree with each other and with PukiWiki's own timestamps.
+	 */
+	private static function wikiNow()
+	{
+		if (defined('UTIME'))
+			return UTIME;
+		return time() - (defined('LOCALZONE') ? LOCALZONE : 0);
+	}
+
+	/** Last modified time of a page, or 0 for one that is not there. */
+	private function wikiTime($page, $node)
+	{
+		$this->spendRead($node);
+		if ($page === '' || !is_page($page))
+			return 0;
+		// Same rule as wiki.source(): a page the viewer may not read is
+		// indistinguishable from one that does not exist
+		if (function_exists('check_readable') && !check_readable($page, TRUE, FALSE))
+			return 0;
+		if (!function_exists('get_filetime'))
+			return 0;
+		return (int) get_filetime($page);
+	}
+
+	private function wikiIsFrozen($page, $node)
+	{
+		$this->spendRead($node);
+		if ($page === '' || !is_page($page))
+			return FALSE;
+		return function_exists('is_freeze') ? (bool) is_freeze($page) : FALSE;
+	}
+
+	/**
+	 * The wiki's own URI, or the URI of one page.
+	 *
+	 * Relative by default, like every other link a script can produce. Pass
+	 * TRUE for the second argument to get the absolute form that a mail body
+	 * or an RSS item needs; the sanitizer keeps either (see filterUrl()).
+	 */
+	private function wikiUri($page, $absolute, $node)
+	{
+		$type = ($absolute && defined('PKWK_URI_ABSOLUTE'))
+			? PKWK_URI_ABSOLUTE : NULL;
+
+		if ($page === '') {
+			if (!function_exists('get_base_uri'))
+				return './';
+			return $type === NULL ? get_base_uri() : get_base_uri($type);
+		}
+
+		$this->spendRead($node);
+		if (function_exists('get_page_uri')) {
+			return $type === NULL
+				? get_page_uri($page) : get_page_uri($page, $type);
+		}
+		$base = function_exists('get_base_uri') ? get_base_uri() : './';
+		return $base . '?' . rawurlencode($page);
+	}
+
+	// Letters date() may be asked for. Everything else in a format string is
+	// literal text, so a script cannot reach for the server's timezone name
+	// or locale and get output that changes with the host. A static property
+	// rather than a const, as traits could not hold constants before PHP 8.2.
+	private static $dateLetters = 'YymndjHGhgisDlNwMFaAUt L';
+
+	/**
+	 * Without a format, exactly what PukiWiki's format_date() prints, so a
+	 * script rendering a timestamp looks like the rest of the wiki. With a
+	 * format string, the date() letters listed above.
+	 *
+	 * format_date()'s second argument is a boolean - wrap it in parentheses -
+	 * and that spelling keeps working here.
+	 */
+	private function dateFormat($time, $format, $node)
+	{
+		if ($format === NULL || $format === '' || is_bool($format)) {
+			if (function_exists('format_date'))
+				return format_date($time, $format === TRUE);
+			$text = date('Y-m-d H:i:s', $time + self::zoneTime());
+			return $format === TRUE ? '(' . $text . ')' : $text;
+		}
+
+		$format = self::stripHtmlMarks(self::toStringValue($format));
+		if (strlen($format) > 64)
+			$this->fail('日付の書式が長すぎます (上限 64バイト)', $node);
+
+		$time += self::zoneTime();
+		$out = '';
+		$n = strlen($format);
+		for ($i = 0; $i < $n; $i++) {
+			$ch = $format[$i];
+			// A backslash quotes the next character, as date() does
+			if ($ch === '\\' && $i + 1 < $n) {
+				$out .= $format[++$i];
+				continue;
+			}
+			$out .= (strpos(self::$dateLetters, $ch) === FALSE && $ch !== ' ')
+				? $ch : date($ch, $time);
+		}
+		return $out;
+	}
+
+	private static function zoneTime()
+	{
+		return defined('ZONETIME') ? ZONETIME : 0;
+	}
+
+	/////////////////////////////////////////////
+	// JSON
+
+	/**
+	 * Objects and arrays go out as themselves; a function has no JSON form,
+	 * so it is dropped from an object and becomes null in an array, the way
+	 * JavaScript's own JSON.stringify() treats one.
+	 *
+	 * @param mixed $indent spaces per level. 0 (the default) for one line
+	 */
+	private function jsonStringify($value, $indent, $node)
+	{
+		$plain = $this->toJsonValue($value, 0, array(), $node);
+
+		$width = is_bool($indent) ? ($indent ? 4 : 0)
+			: (int) $this->toNumber($indent, $node);
+		$flags = JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES;
+		if ($width > 0)
+			$flags |= JSON_PRETTY_PRINT;
+
+		$out = json_encode($plain, $flags);
+		if ($out === FALSE)
+			$this->fail('JSON に変換できません', $node);
+		if ($width > 0 && $width !== 4)
+			$out = self::reindentJson($out, $width);
+		return $this->checkString($out, $node);
+	}
+
+	/** A Pkript value as something json_encode() understands. */
+	private function toJsonValue($value, $depth, $seen, $node)
+	{
+		if ($depth > PKRIPT_MAX_DEPTH)
+			$this->fail('JSON の入れ子が深すぎます (上限 ' . PKRIPT_MAX_DEPTH . ')', $node);
+
+		if (is_string($value))
+			return self::stripHtmlMarks($value);
+		if ($value === NULL || is_bool($value) || is_int($value))
+			return $value;
+		if (is_float($value)) {
+			if (is_nan($value) || is_infinite($value))
+				return NULL;   // as in JavaScript
+			return $value;
+		}
+
+		if ($value instanceof Pkript_Arr || $value instanceof Pkript_Obj) {
+			$id = spl_object_id($value);
+			if (isset($seen[$id]))
+				$this->fail('JSON が循環しています', $node);
+			$seen[$id] = TRUE;
+
+			if ($value instanceof Pkript_Arr) {
+				$out = array();
+				foreach ($value->items as $item) {
+					$item = $this->toJsonValue($item, $depth + 1, $seen, $node);
+					$out[] = $item === self::$jsonSkip ? NULL : $item;
+				}
+				return $out;
+			}
+
+			// An object with no properties has to encode as {}, not [], so
+			// the empty case cannot go through a PHP array
+			$out = new stdClass();
+			foreach ($value->props as $key => $prop) {
+				$prop = $this->toJsonValue($prop, $depth + 1, $seen, $node);
+				if ($prop !== self::$jsonSkip)
+					$out->{(string) $key} = $prop;
+			}
+			return $out;
+		}
+
+		return self::$jsonSkip;   // a function of some kind
+	}
+
+	// Stands for "this value has no JSON form". A string no script can
+	// produce, because it is not a value the language can build.
+	private static $jsonSkip = "\x00pkript-json-skip";
+
+	/**
+	 * JSON_PRETTY_PRINT indents with four spaces and has no setting for it.
+	 * Only the indentation of a line can be spaces, since every newline inside
+	 * a string is escaped, so rewriting the leading run is safe.
+	 */
+	private static function reindentJson($json, $width)
+	{
+		$pad = str_repeat(' ', min($width, 10));
+		return preg_replace_callback('/^(?: {4})+/m', function ($m) use ($pad) {
+			return str_repeat($pad, strlen($m[0]) / 4);
+		}, $json);
+	}
+
+	private function jsonParse($text, $node)
+	{
+		if (trim($text) === '')
+			$this->fail('JSON が空です', $node);
+
+		$data = json_decode($text, FALSE, min(PKRIPT_MAX_DEPTH, 512));
+		if ($data === NULL && strtolower(trim($text)) !== 'null')
+			$this->fail('JSON として読めません', $node);
+
+		return $this->fromJsonValue($data, $node);
+	}
+
+	private function fromJsonValue($value, $node)
+	{
+		if (is_array($value)) {
+			$items = array();
+			foreach ($value as $item)
+				$items[] = $this->fromJsonValue($item, $node);
+			return new Pkript_Arr($this->checkArray($items, $node));
+		}
+		if ($value instanceof stdClass) {
+			$obj = new Pkript_Obj();
+			foreach (get_object_vars($value) as $key => $prop)
+				$obj->props[(string) $key] = $this->fromJsonValue($prop, $node);
+			$this->checkArray($obj->props, $node);
+			return $obj;
+		}
+		if (is_string($value))
+			return $this->checkString(self::stripHtmlMarks($value), $node);
+		if (is_float($value) && $value == (int) $value && abs($value) < 1e15)
+			return (int) $value;   // 1.0 came from "1"; keep it an integer
+		return $value;
+	}
+
 	private function callStringMethod($s, $name, $args, $node)
 	{
 		$enc = SOURCE_ENCODING;
@@ -676,6 +963,31 @@ trait Pkript_Stdlib
 					return '';
 				return mb_substr($s, $i, 1, $enc);
 
+			case 'at':
+				$len = mb_strlen($s, $enc);
+				$i = (int) $this->numArg($args, 0, $node, 0);
+				if ($i < 0)
+					$i += $len;   // -1 is the last character, as in JavaScript
+				if ($i < 0 || $i >= $len)
+					return '';
+				return mb_substr($s, $i, 1, $enc);
+
+			case 'lastIndexOf':
+				$needle = $this->strArg($args, 0);
+				if ($needle === '')
+					return mb_strlen($s, $enc);
+				$at = mb_strrpos($s, $needle, 0, $enc);
+				return $at === FALSE ? -1 : $at;
+
+			case 'trimStart':
+				return ltrim($s);
+			case 'trimEnd':
+				return rtrim($s);
+
+			case 'padStart':
+			case 'padEnd':
+				return $this->pad($s, $name === 'padStart', $args, $node);
+
 			case 'spanWhile':
 			case 'spanUntil':
 				return $this->span($s, $name === 'spanWhile', $args, $node);
@@ -691,6 +1003,31 @@ trait Pkript_Stdlib
 				return str_repeat($s, $n);
 		}
 		$this->fail('String にメソッド ' . $name . ' はありません', $node);
+	}
+
+	/**
+	 * Pad to a length in characters, repeating the pad string and cutting the
+	 * last repeat short, as JavaScript does. A string already that long comes
+	 * back unchanged; padding is never truncation.
+	 */
+	private function pad($s, $atStart, $args, $node)
+	{
+		$enc = SOURCE_ENCODING;
+		$target = (int) $this->numArg($args, 0, $node, 0);
+		$pad = $this->strArg($args, 1, ' ');
+		$len = mb_strlen($s, $enc);
+
+		if ($pad === '' || $target <= $len)
+			return $s;
+		// Checked before the pad is built, so the big string is never made
+		if ($target > PKRIPT_MAX_STRING)
+			$this->failStringTooLong($node);
+
+		$need = $target - $len;
+		$fill = mb_substr(
+			str_repeat($pad, (int) ceil($need / mb_strlen($pad, $enc))),
+			0, $need, $enc);
+		return $this->checkString($atStart ? $fill . $s : $s . $fill, $node);
 	}
 
 	/**
