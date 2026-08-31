@@ -14,6 +14,9 @@ plugin/pkript.inc.php 内の定数を編集して動作を調整できます。
 | PKRIPT_ALLOW_PAGE_SCRIPT | 1 | :config/pkript/script/ ページからの実行を許可するか |
 | PKRIPT_PAGE_SCRIPT_FROZEN_ONLY | 0 | ページ実行を凍結ページのみに限定するか |
 | PKRIPT_PAGE_PREFIX | ':config/pkript/script/' | ページスクリプトのページ名接頭辞 |
+| PKRIPT_ALLOW_DATA | 1 | data.* によるデータ保存を有効にするか |
+| PKRIPT_DATA_PREFIX | ':config/pkript/data/' | データを置くページ名の接頭辞 |
+| PKRIPT_DATA_MIN_TRUST | PKRIPT_WRITE_MIN_TRUST | data.set() に必要な信頼度 |
 | PKRIPT_BIND | 1 | #hello のように、スクリプト名で直接呼び出せるようにするか |
 
 PKRIPT_BIND を 0 にすると #pkript(hello) と &amp;pkript(hello); だけになり、#hello は未定義のプラグイン扱いになります。下の「#aaa による直接呼び出し」も参照してください。
@@ -127,3 +130,32 @@ wiki.write と wiki.append は wiki.token() のトークンを要求します。
 - onclick 等のイベント属性は除去されます。
 - href, src の javascript: や data: スキームは除去されます。
 - class や id には自動で pkript- 接頭辞が付与されます。
+
+### style属性で使えるCSS
+
+プロパティのホワイトリストと、値のパターン検査の二段構えです。見た目のためのプロパティは広く通します。
+
+| 分類 | 通すもの |
+| --- | --- |
+| 色・文字 | color, background-color, font-*, text-*, line-height, letter-spacing, word-spacing, white-space, word-break, overflow-wrap, list-style* |
+| 箱 | margin*, padding*, border*, box-shadow, box-sizing, width, height, min-*, max-*, display, vertical-align, opacity, visibility, overflow*, float, clear, cursor |
+| 表 | border-collapse, border-spacing, table-layout, caption-side, outline* |
+| Flexbox | flex*, justify-*, align-*, order, gap, row-gap, column-gap |
+| Grid | grid-template-*, grid-auto-*, grid-area, grid-column, grid-row, place-* |
+| 動き | transition*, animation*, transform, transform-origin, will-change, filter |
+
+```text
+<div style="transform:rotate(3deg); transition:all 0.3s ease-in-out">
+```
+
+**通さないもの**は、見た目ではなく**位置**に関わるものです。
+
+- position と z-index は通しません（fixed / absolute でWiki自身の上に重ねられるため）
+- ビューポート単位（vw / vh）は通しません（ウィンドウに対して自分を大きくするのはオーバーレイの第一歩であるため）
+- url(...) を含む値は通しません。したがって background-image も通しません
+- expression(...)、javascript:、@import、\、/* を含む値は通しません
+- 関数はホワイトリスト制です。rgb / rgba / hsl / hsla、translate* / scale* / rotate* / skew* / matrix / perspective、cubic-bezier / steps、repeat / minmax / fit-content、blur などのfilter系のみで、引数も同じ規則で検査します。calc() はまだ通していません
+
+値が規則に合わないプロパティは、そのプロパティだけ黙って消えます（要素は残ります）。
+
+animation-name が指すキーフレームは**スクリプトからは定義できません**。&lt;style&gt; は書けず、書いてもサニタイザが落とすため、参照できるのはスキンが既に定義しているものだけです。

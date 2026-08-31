@@ -41,10 +41,36 @@ Wikiのデータ操作APIです。
 | wiki.write(page, text) | ページを上書き保存（action専用） |
 | wiki.append(page, text) | ページ末尾に追記保存（action専用） |
 | wiki.token() | CSRF対策トークンを取得 |
-| wiki.canWrite(page) | 書き込み可能か確認 |
+| wiki.canWrite(page) | そのページを書き込める状態か（下記） |
 | wiki.time(page) | ページの最終更新時刻（存在しない・読めないページは 0） |
 | wiki.isFrozen(page) | ページが凍結されているか確認（存在しないページは false） |
 | wiki.uri([page], [absolute]) | Wiki自身 / ページのURI（既定は相対、第2引数 true で絶対URI） |
+| wiki.redirect(page) | リクエストをそこで終わらせ、page に移動する（action + POST のみ） |
+
+### canWrite が見るもの
+
+wiki.canWrite(page) は、書き込みの条件のうち**フォームでは変えられない側だけ**を返します。スクリプトの信頼度、PKWK_READONLY、ページ名、凍結、$edit_auth_pages です。
+
+action・POST・トークンの3つは**見ません**。フォームが描かれるのはページの描画中だけで、そこでは3つとも必ず偽になります。全部を見ると canWrite() は常に偽になり、「書けないならフォームを描かない」という本来の用途でフォームが1つも描けなくなります。
+
+書き込みそのもの（wiki.write）は従来どおり全条件を見ます。canWrite() が真でも、トークンの無いPOSTは失敗します。
+
+### 書き込んだあと (wiki.redirect)
+
+```js
+function plugin_guestbook_action(e) {
+    wiki.append("GuestBook", "- " + e.vars["text"]);
+    wiki.redirect("GuestBook");   // ここで終わる
+}
+```
+
+wiki.redirect(page) はリクエストをそこで終わらせ、page に移動させます。戻り値は無く、後ろの処理は実行されません。
+
+これが無いと、フォームを送った人は action のページに取り残され、そこで再読み込みするとフォームがもう一度送信されます。
+
+- action からのみ、かつ POST からのみ呼べます。
+- 移動先はこのWikiのページのみです。: で始まるページと存在しないページは拒否します。
+- try / catch では捕まえられません。
 
 ### ページの書き込み例
 ```js
@@ -64,6 +90,45 @@ function plugin_guestbook_action(e) {
     wiki.append("GuestBook", "\n- " + e.vars["text"]);
     return "<p>投稿しました。</p>";
 }
+```
+
+## data
+
+スクリプトがリクエストをまたいで値を残せる場所です。キー1つが :config/pkript/data/&lt;キー&gt; ページ1枚で、値はJSONで入ります。
+
+| メソッド | 説明 |
+| --- | --- |
+| data.get(key, [default]) | 値。書かれていなければ default（既定は null） |
+| data.set(key, value) | 書き込み（action + POST + トークン + 信頼度） |
+| data.has(key) | あるか |
+| data.remove(key) | 削除。無かったときは false |
+| data.keys([prefix]) | キーの配列（ソート済み） |
+| data.canWrite(key) | 書き込める状態か |
+
+```js
+function plugin_counter_action(e) {
+    const n = data.get("counter/" + e.vars["page"], 0) + 1;
+    data.set("counter/" + e.vars["page"], n);
+    wiki.redirect(e.vars["page"]);
+}
+```
+
+- キーは [A-Za-z0-9_-] を / でつないだもの（128バイトまで）。接頭辞の外のページは指せません。
+- 書き込みの条件は wiki.write と同じです。ページを描いているだけのときには書き込めません。
+- **読み出しに閲覧権限はありません。** どのスクリプトからもどのキーも読めます。秘密を置く場所ではありません。
+- PKRIPT_ALLOW_DATA を 0 にすると、読み出しは既定値を返し、書き込みは拒否されます。
+
+## url
+
+| メソッド | 説明 |
+| --- | --- |
+| url.encode(str) | パーセントエンコード（RFC 3986。空白は %20） |
+| url.decode(str) | パーセントデコード。UTF-8にならないものは空文字列 |
+
+ページへのリンクは wiki.uri() で足ります。url.encode はクエリの値を自分で組み立てるときに使います。
+
+```js
+return "<a href=\"" + htmlsc(wiki.uri() + "?cmd=pkript&script=v&q=" + url.encode(q)) + "\">検索</a>";
 ```
 
 ## date

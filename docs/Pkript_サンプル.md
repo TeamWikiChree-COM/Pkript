@@ -169,6 +169,82 @@ var comment = e.vars["comment"].replaceAll("\n", " ");
 if (comment.startsWith("#") || comment.startsWith("*")) comment = " " + comment;
 ```
 
+## vote - 投票（データ保存）
+
+data.* に集計を保存する投票です。同梱の plugin/pkript/script/vote.js がそのまま動きます。
+
+使い方:
+```text
+#vote(好きな色){{
+赤
+青
+緑
+}}
+```
+
+要点だけを抜き出すと次のようになります。
+
+```js
+const keyFor = (page, title) => "vote/" + slug(page) + "/" + slug(title);
+
+function plugin_vote_convert(e) {
+    const tally = data.get(keyFor(e.page, title), {counts: {}, voters: []});
+    // ...集計を表に描き、投票フォームを出す
+}
+
+function plugin_vote_action(e) {
+    const key = keyFor(e.vars["page"], e.vars["title"]);
+    const tally = data.get(key, {counts: {}, voters: []});
+    tally.counts[choice] = countOf(tally, choice) + 1;
+    if (e.user.name != "") tally.voters.push(e.user.name);
+    data.set(key, tally);
+}
+```
+
+- 集計は :config/pkript/data/vote/&lt;ページ&gt;/&lt;質問&gt; に入ります。投票するのにページの編集権限は要りません。
+- ログインしていれば、投票した人の名前を控えて二重投票を止めます。認証の無いWikiでは止められません。
+- フォームを出すかどうかは data.canWrite() で決めます。
+
+## vote2 - 投票（ページ内保存）
+
+PukiWiki本体の vote.inc.php と同じで、集計を**呼び出し行そのもの**に書き戻します。同梱の plugin/pkript/script/vote2.js です。
+
+使い方:
+```text
+#vote2(赤[1],あお[0],green)
+```
+
+投票すると、ページのその行が書き換わります。
+
+```text
+#vote2(赤[1],あお[1],green[0])
+```
+
+```js
+function plugin_vote2_action(e) {
+    const source = wiki.source(page);
+    const line = findCall(source, sent);          // 自分の行を探す
+    const current = parseChoices(argsOf(line));   // ページ側の数を読み直す
+    current[index].count = current[index].count + 1;
+    wiki.write(page, source.replace(line, "#vote2(" + formatChoices(current) + ")"));
+    wiki.redirect(page);
+}
+```
+
+- 集計がページの中にあるので、差分・バックアップ・凍結がそのまま効きます。
+- そのかわり**投票する人にページの編集権限が必要**です。書けないページではボタンを出しません。
+- 送信されてきた数ではなく、書き込む直前にページから読み直した数に足します。送信から書き込みまでの間に誰かが投票していても、その票を消しません。
+- 書き込みのあと wiki.redirect() でページに戻します。これが無いと、再読み込みでもう一度投票されます。
+
+### どちらを使うか
+
+|  | vote（data.*） | vote2（ページ内） |
+| --- | --- | --- |
+| 投票に必要な権限 | 不要 | ページの編集権限 |
+| 集計の置き場所 | :config/pkript/data/* | 呼び出し行の中 |
+| 差分・バックアップ | データページ側に付く | 本文と一緒に付く |
+| 二重投票の抑止 | ログイン中なら可能 | しない（本体と同じ） |
+
 ## jsxcard - JSX記法のカード
 
 JSX記法で枠付きのカードを出します。文字列連結を使わずにHTMLを組み立てます。
