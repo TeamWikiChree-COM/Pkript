@@ -114,7 +114,11 @@ JSXの `{}` は自動でエスケープするので、`htmlsc()` を重ねると
  	} else {
 +		if (file_exists(PLUGIN_DIR . 'pkript.inc.php')) {
 +			require_once(PLUGIN_DIR . 'pkript.inc.php');
-+			if (function_exists('plugin_pkript_bind') && plugin_pkript_bind($name)) return TRUE;
++			if (function_exists('plugin_pkript_bind') && plugin_pkript_bind($name)) {
++ 			$exist[$name] = TRUE;
++ 			$count[$name] = 1;
++ 			return TRUE;
++ 		}
 +		}
  	    	$exist[$name] = FALSE;
  	    	$count[$name] = 1;
