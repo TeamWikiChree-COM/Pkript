@@ -1,5 +1,5 @@
 <?php
-// $Id: pkript.inc.php,v 0.2 2026/08/31 11:06:32 WikiChree.COM Team Exp $
+// $Id: pkript.inc.php,v 0.3 2026/08/31 18:20:16 WikiChree.COM Team Exp $
 
 /**
  * @link https://wikichree.com/guide/?Pkript
@@ -25,6 +25,7 @@ foreach (array(
 	'error',
 	'budget',
 	'values',
+	'regex',
 	'lexer',
 	'parser',
 	'scope',
@@ -81,6 +82,31 @@ if (!defined('PKRIPT_BIND'))
 if (!defined('PKRIPT_JSX'))
 	define('PKRIPT_JSX', 1);
 
+// Regular expression literals, /pattern/flags. Off: '/' is only division.
+if (!defined('PKRIPT_REGEX'))
+	define('PKRIPT_REGEX', 1);
+
+// How hard PCRE may work on one match before giving up. This is the whole
+// answer to catastrophic backtracking: a pattern that would run for minutes
+// stops here instead, and the script is told so. PHP's own default is a
+// million, which is far more than a wiki page ever needs.
+if (!defined('PKRIPT_REGEX_BACKTRACK'))
+	define('PKRIPT_REGEX_BACKTRACK', 100000);
+
+// A pattern longer than this is refused unparsed
+if (!defined('PKRIPT_MAX_REGEX'))
+	define('PKRIPT_MAX_REGEX', 512);
+
+// --- stored data ---
+
+// data.get() / data.set(): one wiki page per key, holding the value as JSON.
+// Pages rather than files of the plugin's own, so the wiki's backups, diffs
+// and editor all work on what a script stored.
+if (!defined('PKRIPT_ALLOW_DATA'))
+	define('PKRIPT_ALLOW_DATA', 1);
+if (!defined('PKRIPT_DATA_PREFIX'))
+	define('PKRIPT_DATA_PREFIX', ':config/pkript/data/');
+
 // --- trust ---
 
 // Where a script came from decides what it may do. Not overridable: the
@@ -98,6 +124,12 @@ if (!defined('PKRIPT_IMPORT_LOWER_TRUST'))
 // that nobody sees happen, so the default is file scripts only.
 if (!defined('PKRIPT_WRITE_MIN_TRUST'))
 	define('PKRIPT_WRITE_MIN_TRUST', PKRIPT_TRUST_FILE);
+
+// What it takes to call data.set(). The same default as wiki.write() and for
+// the same reason: a store a page script could write is a store anyone who
+// can edit that page can write.
+if (!defined('PKRIPT_DATA_MIN_TRUST'))
+	define('PKRIPT_DATA_MIN_TRUST', PKRIPT_WRITE_MIN_TRUST);
 
 // No secret means no token, and every write fails. That is the intended
 // direction to fail in.
@@ -166,30 +198,34 @@ if (!defined('PKRIPT_MAX_PAGE_BYTES'))
 if (!defined('PKRIPT_MAX_PAGES'))
 	define('PKRIPT_MAX_PAGES', 1000);
 
-// Line and column numbers in error messages
+// A run keeps its console.log lines whatever PKRIPT_DEBUG says, so these
+// bound the buffer rather than the output. Over either one the log stops and
+// says so; the run itself is not failed for logging too much.
+if (!defined('PKRIPT_MAX_LOG'))
+	define('PKRIPT_MAX_LOG', 100);
+if (!defined('PKRIPT_MAX_LOG_BYTES'))
+	define('PKRIPT_MAX_LOG_BYTES', 8192);
+
+// Line and column numbers in error messages, and console.log output
 if (!defined('PKRIPT_DEBUG'))
 	define('PKRIPT_DEBUG', 1);
 
 /////////////////////////////////////////////////
 // Plugin entry points
 
-function plugin_pkript_init()
-{
+function plugin_pkript_init() {
 	// Nothing to set up: scripts are loaded lazily on each call.
 }
 
-function plugin_pkript_convert()
-{
+function plugin_pkript_convert() {
 	return plugin_pkript_dispatch(func_get_args(), 'convert');
 }
 
-function plugin_pkript_inline()
-{
+function plugin_pkript_inline() {
 	return plugin_pkript_dispatch(func_get_args(), 'inline');
 }
 
-function plugin_pkript_action()
-{
+function plugin_pkript_action() {
 	global $vars;
 	// 'script', not 'name': a form built by a script wants 'name' for its own
 	// field (a comment form asks for the commenter's name, for one).
@@ -213,8 +249,7 @@ function plugin_pkript_action()
  * @param string $name plugin name
  * @return bool TRUE if script exists and functions were bound
  */
-function plugin_pkript_bind($name)
-{
+function plugin_pkript_bind($name) {
 	if (!PKRIPT_BIND) return FALSE;
 	if (!preg_match('/^[A-Za-z0-9_-]+$/', $name)) return FALSE;
 	$reason = '';

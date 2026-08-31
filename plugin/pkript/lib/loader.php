@@ -1,5 +1,5 @@
 <?php
-// $Id: loader.php,v 0.2 2026/08/31 11:06:32 WikiChree.COM Team Exp $
+// $Id: loader.php,v 0.3 2026/08/31 18:20:16 WikiChree.COM Team Exp $
 
 /**
  * Pkript - script loading and import
@@ -10,8 +10,7 @@
  */
 
 /** Extensions accepted for script files, normalized and de-duplicated. */
-function plugin_pkript_extensions()
-{
+function plugin_pkript_extensions() {
 	static $exts = NULL;
 	if ($exts !== NULL)
 		return $exts;
@@ -33,8 +32,7 @@ function plugin_pkript_extensions()
 /**
  * Locate the script source. Returns FALSE and fills $reason on failure.
  */
-function plugin_pkript_load($name, &$reason, &$trust = NULL)
-{
+function plugin_pkript_load($name, &$reason, &$trust = NULL) {
 	// 1. script/<name>.<ext> - '.pks' and '.js' are equivalent
 	foreach (plugin_pkript_extensions() as $ext) {
 		$file = DATA_HOME . PKRIPT_SCRIPT_DIR . $name . '.' . $ext;
@@ -69,8 +67,7 @@ function plugin_pkript_load($name, &$reason, &$trust = NULL)
  * @param string $reason out: why nothing was loaded
  * @return array|FALSE function declarations, keyed by name
  */
-function plugin_pkript_compile($name, &$trust, &$reason, &$constants = NULL)
-{
+function plugin_pkript_compile($name, &$trust, &$reason, &$constants = NULL) {
 	$source = plugin_pkript_load($name, $reason, $trust);
 	if ($source === FALSE)
 		return FALSE;
@@ -96,8 +93,7 @@ function plugin_pkript_compile($name, &$trust, &$reason, &$constants = NULL)
 }
 
 /** Parse one script, pull in its imports, then add its own functions. */
-function plugin_pkript_compile_unit($name, $source, $trust, &$functions, &$state, $depth)
-{
+function plugin_pkript_compile_unit($name, $source, $trust, &$functions, &$state, $depth) {
 	$lexer = new Pkript_Lexer($source, $name);
 	$parser = new Pkript_Parser($lexer->tokenize(), $name);
 	$own = $parser->parse();
@@ -123,8 +119,7 @@ function plugin_pkript_compile_unit($name, $source, $trust, &$functions, &$state
 }
 
 /** Functions and constants share one namespace; a clash is an error. */
-function plugin_pkript_claim($what, $kind, $script, $node, $functions, $state)
-{
+function plugin_pkript_claim($what, $kind, $script, $node, $functions, $state) {
 	$owner = NULL;
 	if (isset($functions[$what]))
 		$owner = $functions[$what]['script'];
@@ -142,8 +137,7 @@ function plugin_pkript_claim($what, $kind, $script, $node, $functions, $state)
 }
 
 /** Follow one `import`, unless it has been followed already. */
-function plugin_pkript_import($import, $from, $fromTrust, &$functions, &$state, $depth)
-{
+function plugin_pkript_import($import, $from, $fromTrust, &$functions, &$state, $depth) {
 	$name = $import['name'];
 	$fail = function ($message) use ($from, $import) {
 		throw new Pkript_Error($message, $from, $import['line'], $import['col']);
@@ -189,8 +183,7 @@ function plugin_pkript_import($import, $from, $fromTrust, &$functions, &$state, 
  * Blank the lines instead of deleting them so error line numbers still match
  * what the user sees in the page editor.
  */
-function plugin_pkript_strip_metadata($source)
-{
+function plugin_pkript_strip_metadata($source) {
 	$lines = explode("\n", $source);
 	foreach ($lines as $i => $line) {
 		if (preg_match('/^#(freeze|author\()/', $line)) {

@@ -1,5 +1,5 @@
 <?php
-// $Id: lexer.php,v 0.2 2026/08/31 11:06:32 WikiChree.COM Team Exp $
+// $Id: lexer.php,v 0.3 2026/08/31 18:20:16 WikiChree.COM Team Exp $
 
 /**
  * Pkript runtime - lexer
@@ -12,8 +12,7 @@
 /////////////////////////////////////////////////
 // Lexer
 
-class Pkript_Lexer
-{
+class Pkript_Lexer {
 	private $src;
 	private $len;
 	private $pos = 0;
@@ -33,6 +32,7 @@ class Pkript_Lexer
 		'if' => 1,
 		'else' => 1,
 		'while' => 1,
+		'do' => 1,
 		'for' => 1,
 		'break' => 1,
 		'continue' => 1,
@@ -90,8 +90,7 @@ class Pkript_Lexer
 		'?',
 	);
 
-	public function __construct($src, $script, $line = 1, $col = 1)
-	{
+	public function __construct($src, $script, $line = 1, $col = 1) {
 		$this->line = $line;
 		$this->col = $col;
 		// Normalize newlines and strip a UTF-8 BOM
@@ -103,8 +102,7 @@ class Pkript_Lexer
 		$this->script = $script;
 	}
 
-	public function tokenize()
-	{
+	public function tokenize() {
 		$tokens = array();
 		while (TRUE) {
 			$this->skipWhitespaceAndComments();
@@ -115,10 +113,15 @@ class Pkript_Lexer
 			$col = $this->col;
 			$ch = $this->src[$this->pos];
 
-			// '<' is either the operator or the start of JSX markup; only the
-			// token before it can tell the two apart. See jsxAllowed().
-			if ($ch === '<' && PKRIPT_JSX && $this->jsxAllowed($tokens)) {
+			// '<' is either the operator or the start of JSX markup, and '/'
+			// is either division or a regular expression. Only the token
+			// before it can tell either pair apart. See atExpressionStart().
+			if ($ch === '<' && PKRIPT_JSX && $this->atExpressionStart($tokens)) {
 				$tokens[] = $this->token('jsx', $this->readJsxElement(), $line, $col);
+				continue;
+			}
+			if ($ch === '/' && PKRIPT_REGEX && $this->atExpressionStart($tokens)) {
+				$tokens[] = $this->token('regex', $this->readRegex(), $line, $col);
 				continue;
 			}
 
@@ -159,8 +162,7 @@ class Pkript_Lexer
 		return $tokens;
 	}
 
-	private function token($type, $value, $line, $col)
-	{
+	private function token($type, $value, $line, $col) {
 		return array('type' => $type, 'value' => $value, 'line' => $line, 'col' => $col);
 	}
 
@@ -168,8 +170,7 @@ class Pkript_Lexer
 	 * Move over $n bytes, keeping line and column right. Counting the newlines
 	 * in one go beats stepping through the bytes in PHP.
 	 */
-	private function advance($n = 1)
-	{
+	private function advance($n = 1) {
 		if ($this->pos + $n > $this->len) $n = $this->len - $this->pos;
 		if ($n <= 0) return;
 
@@ -185,8 +186,7 @@ class Pkript_Lexer
 	}
 
 	/** Operators that start with each character, longest first. */
-	private static function operatorsByFirst()
-	{
+	private static function operatorsByFirst() {
 		static $index = NULL;
 		if ($index !== NULL) return $index;
 
@@ -197,8 +197,7 @@ class Pkript_Lexer
 		return $index;
 	}
 
-	private function skipWhitespaceAndComments()
-	{
+	private function skipWhitespaceAndComments() {
 		while ($this->pos < $this->len) {
 			$run = strspn($this->src, self::SPACE_CHARS, $this->pos);
 			if ($run > 0) {
@@ -230,8 +229,7 @@ class Pkript_Lexer
 		}
 	}
 
-	private function readString($quote)
-	{
+	private function readString($quote) {
 		$line = $this->line;
 		$col = $this->col;
 		$this->advance(); // opening quote
@@ -280,8 +278,7 @@ class Pkript_Lexer
 	}
 
 	/** One backslash escape, from the backslash. */
-	private function readEscape()
-	{
+	private function readEscape() {
 		$this->advance();
 		if ($this->pos >= $this->len)
 			return '';
@@ -318,8 +315,7 @@ class Pkript_Lexer
 	 *
 	 * @return array of array('type' => 'str'|'expr', ...)
 	 */
-	private function readTemplate()
-	{
+	private function readTemplate() {
 		$openLine = $this->line;
 		$openCol = $this->col;
 		$this->advance();   // opening quote
@@ -363,8 +359,7 @@ class Pkript_Lexer
 	}
 
 	/** The escapes a string takes, plus the two a template adds. */
-	private function readTemplateEscape()
-	{
+	private function readTemplateEscape() {
 		$this->advance();
 		if ($this->pos >= $this->len) return '';
 
@@ -379,8 +374,7 @@ class Pkript_Lexer
 	}
 
 	/** `${ expression }`, tokenized on its own so the parser can read it. */
-	private function readTemplateExpression()
-	{
+	private function readTemplateExpression() {
 		$this->advance(2);   // past '${'
 		$line = $this->line;
 		$col = $this->col;
@@ -403,8 +397,7 @@ class Pkript_Lexer
 	 * Position of the brace that closes the current `${`. Braces inside
 	 * strings, templates and comments do not count.
 	 */
-	private function findTemplateExpressionEnd($what = '${}')
-	{
+	private function findTemplateExpressionEnd($what = '${}') {
 		$depth = 0;
 		$i = $this->pos;
 		while ($i < $this->len) {
@@ -443,8 +436,7 @@ class Pkript_Lexer
 	}
 
 	/** Byte after the quoted run starting at $i. */
-	private function skipQuoted($i, $quote)
-	{
+	private function skipQuoted($i, $quote) {
 		$i++;
 		while ($i < $this->len) {
 			$ch = $this->src[$i];
@@ -455,30 +447,63 @@ class Pkript_Lexer
 		return $this->len;
 	}
 
-	private function readNumber()
-	{
-		$start = $this->pos;
-		$seenDot = FALSE;
-		while (TRUE) {
-			$this->pos += strspn($this->src, self::DIGITS, $this->pos);
-			if (
-				$seenDot || $this->pos >= $this->len ||
-				$this->src[$this->pos] !== '.' ||
-				$this->pos + 1 >= $this->len ||
-				strpos(self::DIGITS, $this->src[$this->pos + 1]) === FALSE
-			) {
-				break;
-			}
-			$seenDot = TRUE;
-			$this->pos++;
+	// One number, anchored at the current position. The three based forms
+	// come first so 0x1 is not read as 0 followed by x1, and every run of
+	// digits is written the same way: a digit, then optionally-underscored
+	// digits, which is what makes 1_000 legal and 1__0, _1 and 1_ not.
+	const NUMBER_RE = '/\\G(?:
+		0[xX](?P<hex>[0-9a-fA-F](?:_?[0-9a-fA-F])*)
+		|0[bB](?P<bin>[01](?:_?[01])*)
+		|0[oO](?P<oct>[0-7](?:_?[0-7])*)
+		|(?P<dec>
+			(?:[0-9](?:_?[0-9])*(?:\\.[0-9](?:_?[0-9])*)?|\\.[0-9](?:_?[0-9])*)
+			(?:[eE][+-]?[0-9](?:_?[0-9])*)?
+		)
+	)/x';
+
+	/**
+	 * Decimal, hex, binary and octal, with `_` allowed between digits.
+	 *
+	 * The value is produced by PHP's own string-to-number conversion, which
+	 * gives an int when one fits and a float when it does not - the same
+	 * place JavaScript stops being exact. A form with a '.' or an exponent
+	 * stays a float even when it lands on a whole number, so 1.0 and 1e3 do
+	 * not silently become integers.
+	 */
+	private function readNumber() {
+		if (!preg_match(self::NUMBER_RE, $this->src, $m, 0, $this->pos)) {
+			throw new Pkript_Error('数値リテラルが不正です',
+				$this->script, $this->line, $this->col);
 		}
-		$text = substr($this->src, $start, $this->pos - $start);
-		$this->col += $this->pos - $start;
-		return $seenDot ? (float)$text : (int)$text;
+
+		$text = $m[0];
+		$this->pos += strlen($text);
+		$this->col += strlen($text);
+
+		// 123abc and 0x are both this: something a number may not run into
+		if ($this->pos < $this->len &&
+			strpos(self::IDENT_CHARS, $this->src[$this->pos]) !== FALSE) {
+			throw new Pkript_Error(
+				'数値リテラルの直後に ' . $this->describeChar($this->src[$this->pos]) .
+				' は書けません',
+				$this->script, $this->line, $this->col);
+		}
+
+		foreach (array('hex' => 16, 'bin' => 2, 'oct' => 8) as $key => $base) {
+			if (isset($m[$key]) && $m[$key] !== '') {
+				// base_convert() loses precision without warning; these do not
+				$digits = str_replace('_', '', $m[$key]);
+				return $base === 16 ? hexdec($digits)
+					: ($base === 2 ? bindec($digits) : octdec($digits));
+			}
+		}
+
+		$dec = str_replace('_', '', $m[0]);
+		// '+ 0' picks int or float the way PHP reads the literal itself
+		return $dec + 0;
 	}
 
-	private function readIdentifier()
-	{
+	private function readIdentifier() {
 		$n = strspn($this->src, self::IDENT_CHARS, $this->pos);
 		$word = substr($this->src, $this->pos, $n);
 		// No newline can be in there, so the column moves by the length
@@ -487,8 +512,7 @@ class Pkript_Lexer
 		return $word;
 	}
 
-	private function readOperator()
-	{
+	private function readOperator() {
 		$index = self::operatorsByFirst();
 		$first = $this->src[$this->pos];
 		if (!isset($index[$first])) return NULL;
@@ -505,8 +529,7 @@ class Pkript_Lexer
 		return NULL;
 	}
 
-	private function describeChar($ch)
-	{
+	private function describeChar($ch) {
 		$code = ord($ch);
 		if ($code < 0x20 || $code >= 0x7F)
 			return '(0x' . dechex($code) . ')';
@@ -530,13 +553,17 @@ class Pkript_Lexer
 		'param' => 1, 'source' => 1, 'track' => 1, 'wbr' => 1,
 	);
 
-	public static function isVoidTag($tag)
-	{
+	public static function isVoidTag($tag) {
 		return isset(self::$voidTags[$tag]);
 	}
 
-	private function jsxAllowed($tokens)
-	{
+	/**
+	 * Could an expression start here? Only after an operator or a keyword
+	 * (return, =, (, comma, ?, :, ...), or at the very beginning. After a
+	 * value - an identifier, a number, a closing bracket - what follows is an
+	 * operator, so `a < b` stays a comparison and `a / b` stays a division.
+	 */
+	private function atExpressionStart($tokens) {
 		if (empty($tokens))
 			return TRUE;
 
@@ -558,8 +585,7 @@ class Pkript_Lexer
 	 *
 	 * @return array tag / attrs / children / void
 	 */
-	private function readJsxElement()
-	{
+	private function readJsxElement() {
 		$line = $this->line;
 		$col = $this->col;
 		$this->advance();   // '<'
@@ -598,8 +624,7 @@ class Pkript_Lexer
 	}
 
 	/** Attributes up to the '/' or '>' that ends the opening tag. */
-	private function readJsxAttributes($line, $col)
-	{
+	private function readJsxAttributes($line, $col) {
 		$attrs = array();
 		while (TRUE) {
 			$this->skipJsxSpaces();
@@ -637,8 +662,7 @@ class Pkript_Lexer
 	}
 
 	/** A quoted string or a braced expression. */
-	private function readJsxAttrValue()
-	{
+	private function readJsxAttrValue() {
 		if ($this->pos >= $this->len)
 			$this->jsxError('属性値がありません');
 
@@ -658,8 +682,7 @@ class Pkript_Lexer
 	 * An attribute string, taken literally: JSX has no backslash escapes
 	 * there, and a written-out character reference survives into the output.
 	 */
-	private function readJsxAttrString($quote)
-	{
+	private function readJsxAttrString($quote) {
 		$line = $this->line;
 		$col = $this->col;
 		$this->advance();   // opening quote
@@ -679,8 +702,7 @@ class Pkript_Lexer
 	 * Children up to the matching closing tag: runs of text, braced
 	 * expressions and nested elements, in the order written.
 	 */
-	private function readJsxChildren($tag, $line, $col)
-	{
+	private function readJsxChildren($tag, $line, $col) {
 		$children = array();
 		$text = '';
 		while (TRUE) {
@@ -719,8 +741,7 @@ class Pkript_Lexer
 	}
 
 	/** A closing tag, which has to name the element it closes. */
-	private function readJsxClosingTag($tag)
-	{
+	private function readJsxClosingTag($tag) {
 		$line = $this->line;
 		$col = $this->col;
 		$this->advance(2);   // '</'
@@ -745,8 +766,7 @@ class Pkript_Lexer
 	}
 
 	/** Text collected so far becomes a child, if anything is left of it. */
-	private function flushJsxText(&$children, &$text)
-	{
+	private function flushJsxText(&$children, &$text) {
 		$value = self::normalizeJsxText($text);
 		$text = '';
 		if ($value !== '')
@@ -758,8 +778,7 @@ class Pkript_Lexer
 	 * dropped, and what is left is joined with single spaces. Text written on
 	 * one line is kept exactly as it was, spaces included.
 	 */
-	private static function normalizeJsxText($text)
-	{
+	private static function normalizeJsxText($text) {
 		if (strpos($text, "\n") === FALSE)
 			return $text;
 
@@ -773,8 +792,7 @@ class Pkript_Lexer
 	}
 
 	/** A braced expression, tokenized on its own the way a template one is. */
-	private function readJsxExpression()
-	{
+	private function readJsxExpression() {
 		$this->advance();   // '{'
 		$line = $this->line;
 		$col = $this->col;
@@ -797,23 +815,20 @@ class Pkript_Lexer
 	const JSX_ATTR_CHARS =
 		'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_:.';
 
-	private function readJsxName()
-	{
+	private function readJsxName() {
 		if ($this->pos >= $this->len || !ctype_alpha($this->src[$this->pos]))
 			return '';
 		return $this->readJsxWord(self::JSX_NAME_CHARS);
 	}
 
-	private function readJsxAttrName()
-	{
+	private function readJsxAttrName() {
 		$ch = $this->src[$this->pos];
 		if (!ctype_alpha($ch) && $ch !== '_')
 			return '';
 		return $this->readJsxWord(self::JSX_ATTR_CHARS);
 	}
 
-	private function readJsxWord($chars)
-	{
+	private function readJsxWord($chars) {
 		$n = strspn($this->src, $chars, $this->pos);
 		$word = substr($this->src, $this->pos, $n);
 		// No newline can be in there, so the column moves by the length
@@ -822,15 +837,73 @@ class Pkript_Lexer
 		return $word;
 	}
 
-	private function skipJsxSpaces()
-	{
+	private function skipJsxSpaces() {
 		$run = strspn($this->src, self::SPACE_CHARS, $this->pos);
 		if ($run > 0)
 			$this->advance($run);
 	}
 
-	private function jsxError($message)
-	{
+	/////////////////////////////////////////////
+	// Regular expressions
+
+	/**
+	 * `/pattern/flags`, from the opening slash.
+	 *
+	 * The pattern is kept exactly as written and handed to the parser, which
+	 * checks it. An unescaped '/' ends the literal, so the source can never
+	 * contain one - which is what lets the runtime wrap it in '/' delimiters
+	 * later without escaping anything.
+	 *
+	 * @return array source and flags
+	 */
+	private function readRegex() {
+		$line = $this->line;
+		$col = $this->col;
+		$this->advance();   // opening '/'
+
+		$source = '';
+		$inClass = FALSE;   // '/' inside [...] is a literal slash, as in JS
+		while (TRUE) {
+			if ($this->pos >= $this->len || $this->src[$this->pos] === "\n") {
+				throw new Pkript_Error('正規表現が閉じられていません',
+					$this->script, $line, $col);
+			}
+
+			$ch = $this->src[$this->pos];
+			if ($ch === '\\') {
+				if ($this->pos + 1 >= $this->len || $this->src[$this->pos + 1] === "\n") {
+					throw new Pkript_Error('正規表現が閉じられていません',
+						$this->script, $line, $col);
+				}
+				$source .= substr($this->src, $this->pos, 2);
+				$this->advance(2);
+				continue;
+			}
+			if ($ch === '[') $inClass = TRUE;
+			if ($ch === ']') $inClass = FALSE;
+			if ($ch === '/' && !$inClass) {
+				$this->advance();
+				break;
+			}
+			$source .= $ch;
+			$this->advance();
+		}
+
+		if ($source === '') {
+			throw new Pkript_Error('正規表現が空です', $this->script, $line, $col);
+		}
+
+		// Flags run right up against the closing slash
+		$flags = '';
+		if ($this->pos < $this->len &&
+			strpos(self::IDENT_CHARS, $this->src[$this->pos]) !== FALSE) {
+			$flags = $this->readIdentifier();
+		}
+		return array('source' => $source, 'flags' => $flags,
+			'line' => $line, 'col' => $col);
+	}
+
+	private function jsxError($message) {
 		throw new Pkript_Error($message, $this->script, $this->line, $this->col);
 	}
 }

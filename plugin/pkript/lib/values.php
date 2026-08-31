@@ -1,5 +1,5 @@
 <?php
-// $Id: values.php,v 0.2 2026/08/31 11:06:32 WikiChree.COM Team Exp $
+// $Id: values.php,v 0.3 2026/08/31 18:20:16 WikiChree.COM Team Exp $
 
 /**
  * Pkript runtime - value types
@@ -17,22 +17,18 @@
 // Strings / numbers / booleans / null map straight onto PHP scalars.
 
 /** An array value. */
-class Pkript_Arr
-{
+class Pkript_Arr {
 	public $items;
-	public function __construct($items = array())
-	{
+	public function __construct($items = array()) {
 		$this->items = array_values($items);
 	}
 }
 
 /** An object value (`{ a: 1 }`, plus `e` and the API namespaces). */
-class Pkript_Obj
-{
+class Pkript_Obj {
 	public $props;
 
-	public function __construct($props = array())
-	{
+	public function __construct($props = array()) {
 		// Accept plain PHP arrays from the runtime side and wrap them
 		$this->props = array();
 		foreach ($props as $k => $v)
@@ -41,34 +37,28 @@ class Pkript_Obj
 }
 
 /** A user-defined function. $scope is the closure of an arrow function. */
-class Pkript_Func
-{
+class Pkript_Func {
 	public $decl;
 	public $scope;
-	public function __construct($decl, $scope = NULL)
-	{
+	public function __construct($decl, $scope = NULL) {
 		$this->decl = $decl;
 		$this->scope = $scope;
 	}
 }
 
 /** A runtime-provided function, e.g. `html.escape`. */
-class Pkript_Builtin
-{
+class Pkript_Builtin {
 	public $name;
-	public function __construct($name)
-	{
+	public function __construct($name) {
 		$this->name = $name;
 	}
 }
 
 /** A runtime-provided method bound to its receiver, e.g. `"a".toUpperCase`. */
-class Pkript_Method
-{
+class Pkript_Method {
 	public $receiver;
 	public $name;
-	public function __construct($receiver, $name)
-	{
+	public function __construct($receiver, $name) {
 		$this->receiver = $receiver;
 		$this->name = $name;
 	}

@@ -1,5 +1,5 @@
 <?php
-// $Id: cache.php,v 0.1 2026/08/31 00:00:00 WikiChree.COM Team Exp $
+// $Id: cache.php,v 0.3 2026/08/31 18:20:16 WikiChree.COM Team Exp $
 
 /**
  * Pkript - parsed script cache
@@ -19,8 +19,7 @@
 // keep working as they should.
 
 /** Where the parsed form of $name is kept. */
-function plugin_pkript_cache_path($name)
-{
+function plugin_pkript_cache_path($name) {
 	return CACHE_DIR . 'pkript_ast_' . $name . '.dat';
 }
 
@@ -29,8 +28,7 @@ function plugin_pkript_cache_path($name)
  * script compiles has to be in here, or a stale entry would survive a config
  * change.
  */
-function plugin_pkript_cache_key()
-{
+function plugin_pkript_cache_key() {
 	static $key = NULL;
 	if ($key !== NULL)
 		return $key;
@@ -43,9 +41,11 @@ function plugin_pkript_cache_key()
 		PKRIPT_ALLOW_PAGE_SCRIPT,
 		PKRIPT_PAGE_SCRIPT_FROZEN_ONLY,
 		PKRIPT_PAGE_PREFIX,
+		PKRIPT_DATA_PREFIX,
 		PKRIPT_SCRIPT_DIR,
 		PKRIPT_SCRIPT_EXT,
 		PKRIPT_JSX,
+		PKRIPT_REGEX,
 	)));
 }
 
@@ -60,8 +60,7 @@ function plugin_pkript_cache_key()
  * @param int    $trust      in: the root's trust. out: the run's trust
  * @return array|FALSE the function table
  */
-function plugin_pkript_cache_read($name, $rootSource, &$trust, &$constants)
-{
+function plugin_pkript_cache_read($name, $rootSource, &$trust, &$constants) {
 	if (!PKRIPT_AST_CACHE)
 		return FALSE;
 
@@ -108,8 +107,7 @@ function plugin_pkript_cache_read($name, $rootSource, &$trust, &$constants)
 }
 
 /** Is this an AST entry, and not whatever else was in the file? */
-function plugin_pkript_cache_shape($entry)
-{
+function plugin_pkript_cache_shape($entry) {
 	if (!is_array($entry))
 		return FALSE;
 	if (!isset($entry['key'], $entry['units'], $entry['functions']))
@@ -130,8 +128,7 @@ function plugin_pkript_cache_shape($entry)
 }
 
 /** Store a freshly parsed script. Silent about failure: it is only a cache. */
-function plugin_pkript_cache_write($name, $units, $functions, $constants)
-{
+function plugin_pkript_cache_write($name, $units, $functions, $constants) {
 	if (!PKRIPT_AST_CACHE)
 		return;
 

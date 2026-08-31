@@ -1,5 +1,5 @@
 <?php
-// $Id: interpreter.php,v 0.2 2026/08/31 11:06:32 WikiChree.COM Team Exp $
+// $Id: interpreter.php,v 0.3 2026/08/31 18:20:16 WikiChree.COM Team Exp $
 
 /**
  * Pkript runtime - interpreter core
@@ -9,11 +9,7 @@
  * @license https://opensource.org/license/mit MIT
  */
 
-class Pkript_Interpreter
-{
-	// The standard library lives in stdlib.php
-	use Pkript_Stdlib;
-
+class Pkript_Interpreter {
 	private $functions;
 	private $script;
 	private $depth = 0;
@@ -39,31 +35,39 @@ class Pkript_Interpreter
 	// in for it in the script's output. See Pkript_Sanitizer.
 	private $fragments = array();
 
+	// The standard library: every builtin and method a script can reach.
+	// See lib/std/registry.php.
+	private $stdlib;
 
-	public function __construct($functions, $script, $trust = NULL, $constants = array())
-	{
+	// console.log lines, shown after the output when PKRIPT_DEBUG is on.
+	// Filled either way, so debug does not change how long a script runs.
+	private $logs = array();
+	private $logBytes = 0;
+
+
+	public function __construct($functions, $script, $trust = NULL, $constants = array()) {
 		$this->functions = $functions;
 		$this->script = $script;
 		$this->trust = $trust === NULL ? PKRIPT_TRUST_FILE : $trust;
 		$this->budget = Pkript_Budget::current();
 		$this->constants = $constants;
 		$this->globals = new Pkript_Scope();
+		$this->stdlib = new Pkript_Stdlib($this);
 
-		foreach (self::apiNamespaces() as $name => $members) {
+		foreach ($this->stdlib->namespaces() as $name => $members) {
 			$ns = new Pkript_Obj();
 			foreach ($members as $member) {
 				$ns->props[$member] = new Pkript_Builtin($name . '.' . $member);
 			}
 			$this->globals->declare_($name, $ns, TRUE);
 		}
-		foreach (self::globalFunctions() as $fn) {
+		foreach ($this->stdlib->globalFunctions() as $fn) {
 			$this->globals->declare_($fn, new Pkript_Builtin($fn), TRUE);
 		}
 	}
 
 
-	public function callEntryPoint($name, $context)
-	{
+	public function callEntryPoint($name, $context) {
 		if (!isset($this->functions[$name])) {
 			throw new Pkript_Error(
 				'エントリポイント ' . $name . ' が見つかりません',
@@ -88,8 +92,7 @@ class Pkript_Interpreter
 	 * Run the top level declarations into the global scope. Their cost is
 	 * charged to the budget like any other code, because it is.
 	 */
-	private function declareConstants()
-	{
+	private function declareConstants() {
 		foreach ($this->constants as $const) {
 			$this->scriptStack[] = isset($const['script'])
 				? $const['script'] : $this->script;
@@ -106,9 +109,85 @@ class Pkript_Interpreter
 	}
 
 	/** Trusted HTML that the sanitizer must paste back into the output. */
-	public function getFragments()
-	{
+	public function getFragments() {
 		return $this->fragments;
+	}
+
+	/** @return array of array('level' => 'log'|'warn'|'error', 'text' => string) */
+	public function getLogs() {
+		return $this->logs;
+	}
+
+	/////////////////////////////////////////////
+	// Runtime API
+	//
+	// What the standard library is allowed to know about the interpreter.
+	// Modules go through these and nothing else, so widening a module's reach
+	// means adding a method here on purpose - see lib/std/module.php.
+
+	/** @return Pkript_Budget the limits this run is charged against */
+	public function budget() {
+		return $this->budget;
+	}
+
+	/** Lowest trust level among the script and everything it imported. */
+	public function trust() {
+		return $this->trust;
+	}
+
+	/** 'convert' | 'inline' | 'action'. wiki.write() needs 'action'. */
+	public function entryType() {
+		return $this->entryType;
+	}
+
+	/** Arguments of the call we are inside, for the func_get_*() helpers. */
+	public function currentCallArgs() {
+		$args = end($this->argsStack);
+		return $args === FALSE ? array() : $args;
+	}
+
+	/**
+	 * Hand HTML that PukiWiki produced to the sanitizer untouched.
+	 * Bounded so a loop cannot grow the table without limit.
+	 */
+	public function addFragment($html, $node) {
+		if (count($this->fragments) >= PKRIPT_MAX_ARRAY) {
+			$this->fail('Wiki出力の断片が多すぎます (上限 ' .
+				PKRIPT_MAX_ARRAY . ')', $node);
+		}
+		return Pkript_Sanitizer::addFragment($this->fragments, $html);
+	}
+
+	/**
+	 * Append one console line. Never fails the run: a log that hits its
+	 * ceiling says so and stops, because losing debug output is not a reason
+	 * to kill a page that would otherwise have rendered.
+	 *
+	 * @param string $level 'log' | 'warn' | 'error'
+	 */
+	public function log($level, $text) {
+		if (count($this->logs) >= PKRIPT_MAX_LOG ||
+			$this->logBytes >= PKRIPT_MAX_LOG_BYTES) {
+			return;
+		}
+
+		$text = self::stripHtmlMarks($text);
+		$room = PKRIPT_MAX_LOG_BYTES - $this->logBytes;
+		if (strlen($text) > $room) {
+			// Cut on a character boundary; the line is about to be escaped
+			// and shown, and a half UTF-8 sequence would come out as U+FFFD
+			$text = mb_strcut($text, 0, $room, 'UTF-8') . '...';
+		}
+
+		$this->logBytes += strlen($text);
+		$this->logs[] = array('level' => $level, 'text' => $text);
+
+		if (count($this->logs) >= PKRIPT_MAX_LOG ||
+			$this->logBytes >= PKRIPT_MAX_LOG_BYTES) {
+			$this->logs[] = array('level' => 'warn',
+				'text' => 'ログはここまでです (上限 ' . PKRIPT_MAX_LOG . '件 / ' .
+					PKRIPT_MAX_LOG_BYTES . 'バイト)');
+		}
 	}
 
 	/////////////////////////////////////////////
@@ -118,8 +197,7 @@ class Pkript_Interpreter
 	 * Charged once per statement and per expression node. Keeps a script that
 	 * uses no API at all from burning the request.
 	 */
-	private function tick($node = NULL)
-	{
+	private function tick($node = NULL) {
 		$steps = $this->budget->step();
 		if ($this->budget->overSteps()) {
 			$this->failLimit(
@@ -140,29 +218,25 @@ class Pkript_Interpreter
 	}
 
 	/** Also called where big values are built: one step can allocate 1MB. */
-	private function checkMemory($node)
-	{
+	private function checkMemory($node) {
 		if ($this->budget->overMemory()) {
 			$this->failLimit('メモリ使用量が上限を超えました (上限 ' .
 				(int) (PKRIPT_MAX_MEMORY / 1048576) . 'MB)', $node);
 		}
 	}
 
-	private function checkString($s, $node)
-	{
+	public function checkString($s, $node) {
 		if (strlen($s) > PKRIPT_MAX_STRING)
 			$this->failStringTooLong($node);
 		$this->checkMemory($node);
 		return $s;
 	}
 
-	private function failStringTooLong($node)
-	{
+	public function failStringTooLong($node) {
 		$this->failLimit('文字列が長すぎます (上限 ' . PKRIPT_MAX_STRING . 'バイト)', $node);
 	}
 
-	private function checkArray($items, $node)
-	{
+	public function checkArray($items, $node) {
 		if (count($items) > PKRIPT_MAX_ARRAY) {
 			$this->failLimit('配列の要素数が上限を超えました (上限 ' . PKRIPT_MAX_ARRAY . ')', $node);
 		}
@@ -173,8 +247,7 @@ class Pkript_Interpreter
 	/////////////////////////////////////////////
 	// Execution
 
-	private function invoke($decl, $args, $closure = NULL)
-	{
+	private function invoke($decl, $args, $closure = NULL) {
 		if ($this->depth >= PKRIPT_MAX_DEPTH) {
 			throw new Pkript_LimitError(
 				'関数呼び出しが深すぎます (上限 ' . PKRIPT_MAX_DEPTH . ')',
@@ -213,16 +286,14 @@ class Pkript_Interpreter
 		}
 	}
 
-	private function execBlock($block, $parentScope)
-	{
+	private function execBlock($block, $parentScope) {
 		$scope = new Pkript_Scope($parentScope);
 		foreach ($block['body'] as $stmt) {
 			$this->execStatement($stmt, $scope);
 		}
 	}
 
-	private function execStatement($stmt, $scope)
-	{
+	private function execStatement($stmt, $scope) {
 		$this->tick($stmt);
 
 		switch ($stmt['type']) {
@@ -257,6 +328,14 @@ class Pkript_Interpreter
 				$this->execWhile($stmt, $scope);
 				return;
 
+			case 'DoWhile':
+				$this->execDoWhile($stmt, $scope);
+				return;
+
+			case 'Labelled':
+				$this->execLabelled($stmt, $scope);
+				return;
+
 			case 'For':
 				$this->execFor($stmt, $scope);
 				return;
@@ -278,10 +357,10 @@ class Pkript_Interpreter
 				return;
 
 			case 'Break':
-				throw new Pkript_Break();
+				throw new Pkript_Break($stmt['label']);
 
 			case 'Continue':
-				throw new Pkript_Continue();
+				throw new Pkript_Continue($stmt['label']);
 
 			case 'Empty':
 				return;
@@ -289,21 +368,44 @@ class Pkript_Interpreter
 		$this->fail('未対応の文です: ' . $stmt['type'], $stmt);
 	}
 
-	/** Run one loop body, absorbing break / continue. @return FALSE to stop the loop */
-	private function runLoopBody($body, $scope)
-	{
+	/**
+	 * Run one loop body, absorbing the break / continue meant for this loop.
+	 * One carrying a different label belongs to a loop further out and is
+	 * rethrown untouched.
+	 *
+	 * @param string $label this loop's label, '' if it has none
+	 * @return FALSE to stop the loop
+	 */
+	private function runLoopBody($body, $scope, $label = '') {
 		try {
 			$this->execStatement($body, new Pkript_Scope($scope));
 		} catch (Pkript_Break $b) {
+			if ($b->label !== '' && $b->label !== $label)
+				throw $b;
 			return FALSE;
 		} catch (Pkript_Continue $c) {
+			if ($c->label !== '' && $c->label !== $label)
+				throw $c;
 			// fall through to the next iteration
 		}
 		return TRUE;
 	}
 
-	private function guardIterations($count, $stmt)
-	{
+	/**
+	 * A label on something that is not a loop, which only `break name` can
+	 * reach. A label on a loop is carried by the loop itself - see
+	 * runLoopBody() - so that `continue name` reaches the right iteration.
+	 */
+	private function execLabelled($stmt, $scope) {
+		try {
+			$this->execStatement($stmt['body'], $scope);
+		} catch (Pkript_Break $b) {
+			if ($b->label !== $stmt['label'])
+				throw $b;
+		}
+	}
+
+	private function guardIterations($count, $stmt) {
 		if ($count > PKRIPT_MAX_LOOP) {
 			$this->failLimit('ループの繰り返しが上限を超えました (上限 ' . PKRIPT_MAX_LOOP . ')', $stmt);
 		}
@@ -314,8 +416,7 @@ class Pkript_Interpreter
 	 * or a script could wrap a runaway loop in try/catch and keep going.
 	 * return / break / continue travel as their own signals and are unaffected.
 	 */
-	private function execTry($stmt, $scope)
-	{
+	private function execTry($stmt, $scope) {
 		try {
 			$this->execStatement($stmt['block'], new Pkript_Scope($scope));
 			return;
@@ -338,8 +439,7 @@ class Pkript_Interpreter
 	 * one case running into the next - as in JavaScript. `continue` is left
 	 * alone: it belongs to whatever loop the switch sits in.
 	 */
-	private function execSwitch($stmt, $scope)
-	{
+	private function execSwitch($stmt, $scope) {
 		$subject = $this->eval_($stmt['subject'], $scope);
 		$inner = new Pkript_Scope($scope);
 
@@ -372,22 +472,33 @@ class Pkript_Interpreter
 				}
 			}
 		} catch (Pkript_Break $b) {
-			// break ends the switch
+			// A plain break ends the switch; a labelled one was aimed at a
+			// loop outside it and has to keep going
+			if ($b->label !== '')
+				throw $b;
 		}
 	}
 
-	private function execWhile($stmt, $scope)
-	{
+	private function execWhile($stmt, $scope) {
 		$n = 0;
 		while (self::toBool($this->eval_($stmt['test'], $scope))) {
 			$this->guardIterations(++$n, $stmt);
-			if (!$this->runLoopBody($stmt['body'], $scope))
+			if (!$this->runLoopBody($stmt['body'], $scope, $stmt['label']))
 				break;
 		}
 	}
 
-	private function execFor($stmt, $scope)
-	{
+	/** The body runs before the test, so it always runs at least once. */
+	private function execDoWhile($stmt, $scope) {
+		$n = 0;
+		do {
+			$this->guardIterations(++$n, $stmt);
+			if (!$this->runLoopBody($stmt['body'], $scope, $stmt['label']))
+				break;
+		} while (self::toBool($this->eval_($stmt['test'], $scope)));
+	}
+
+	private function execFor($stmt, $scope) {
 		// The init declaration lives in its own scope, shared by every iteration
 		$outer = new Pkript_Scope($scope);
 		if ($stmt['init'] !== NULL)
@@ -398,7 +509,7 @@ class Pkript_Interpreter
 			if ($stmt['test'] !== NULL && !self::toBool($this->eval_($stmt['test'], $outer)))
 				break;
 			$this->guardIterations(++$n, $stmt);
-			if (!$this->runLoopBody($stmt['body'], $outer))
+			if (!$this->runLoopBody($stmt['body'], $outer, $stmt['label']))
 				break;
 			if ($stmt['update'] !== NULL)
 				$this->eval_($stmt['update'], $outer);
@@ -409,8 +520,7 @@ class Pkript_Interpreter
 	 * `for (const k in obj)` walks the keys, as JavaScript does. On an array
 	 * that means the indexes, as strings - for..of is what you want there.
 	 */
-	private function execForIn($stmt, $scope)
-	{
+	private function execForIn($stmt, $scope) {
 		$subject = $this->eval_($stmt['subject'], $scope);
 
 		if ($subject instanceof Pkript_Obj) {
@@ -431,8 +541,7 @@ class Pkript_Interpreter
 		$this->runForEach($stmt, $scope, $items);
 	}
 
-	private function execForOf($stmt, $scope)
-	{
+	private function execForOf($stmt, $scope) {
 		$subject = $this->eval_($stmt['subject'], $scope);
 
 		if ($subject instanceof Pkript_Arr) {
@@ -448,15 +557,14 @@ class Pkript_Interpreter
 	}
 
 	/** The loop both for..of and for..in run once they know their items. */
-	private function runForEach($stmt, $scope, $items)
-	{
+	private function runForEach($stmt, $scope, $items) {
 		$n = 0;
 		foreach ($items as $item) {
 			$this->guardIterations(++$n, $stmt);
 			// Fresh binding per iteration, so `const` works like it does in JS
 			$iter = new Pkript_Scope($scope);
 			$iter->declare_($stmt['name'], $item, $stmt['kind'] === 'const');
-			if (!$this->runLoopBody($stmt['body'], $iter))
+			if (!$this->runLoopBody($stmt['body'], $iter, $stmt['label']))
 				break;
 		}
 	}
@@ -464,8 +572,7 @@ class Pkript_Interpreter
 	/////////////////////////////////////////////
 	// Evaluation
 
-	private function eval_($node, $scope)
-	{
+	private function eval_($node, $scope) {
 		$this->tick($node);
 
 		switch ($node['type']) {
@@ -495,6 +602,11 @@ class Pkript_Interpreter
 
 			case 'Jsx':
 				return $this->evalJsx($node, $scope);
+
+			case 'Regex':
+				// A fresh value per evaluation: two of them are never the
+				// same object, exactly as two array literals are not
+				return new Pkript_Regex($node['source'], $node['flags']);
 
 			case 'ArrayLit':
 				$out = array();
@@ -538,8 +650,7 @@ class Pkript_Interpreter
 		$this->fail('未対応の式です: ' . $node['type'], $node);
 	}
 
-	private function evalAssign($node, $scope)
-	{
+	private function evalAssign($node, $scope) {
 		$target = $node['target'];
 		$value = $this->eval_($node['value'], $scope);
 
@@ -558,8 +669,7 @@ class Pkript_Interpreter
 		return $value;
 	}
 
-	private function evalUpdate($node, $scope)
-	{
+	private function evalUpdate($node, $scope) {
 		$target = $node['argument'];
 		if (
 			$target['type'] !== 'Identifier' &&
@@ -575,8 +685,7 @@ class Pkript_Interpreter
 	}
 
 	/** Write to an assignable expression: a variable, a property or an index. */
-	private function store($target, $value, $scope, $node)
-	{
+	private function store($target, $value, $scope, $node) {
 		if ($target['type'] === 'Identifier') {
 			$res = $scope->set($target['name'], $value);
 			if ($res === 'const') {
@@ -621,8 +730,7 @@ class Pkript_Interpreter
 		$this->fail(self::typeName($obj) . ' には添字で代入できません', $node);
 	}
 
-	private function evalUnary($node, $scope)
-	{
+	private function evalUnary($node, $scope) {
 		$value = $this->eval_($node['argument'], $scope);
 		switch ($node['op']) {
 			case '!':
@@ -635,8 +743,7 @@ class Pkript_Interpreter
 		$this->fail('未対応の単項演算子 ' . $node['op'], $node);
 	}
 
-	private function evalBinary($node, $scope)
-	{
+	private function evalBinary($node, $scope) {
 		// Short-circuit operators
 		if ($node['op'] === '&&') {
 			$left = $this->eval_($node['left'], $scope);
@@ -655,8 +762,7 @@ class Pkript_Interpreter
 	}
 
 	/** The non short-circuiting operators, split out so `+=` can reuse them. */
-	private function applyBinary($node, $l, $r)
-	{
+	private function applyBinary($node, $l, $r) {
 		switch ($node['op']) {
 			case '+':
 				// String on either side means concatenation
@@ -703,8 +809,7 @@ class Pkript_Interpreter
 		$this->fail('未対応の演算子 ' . $node['op'], $node);
 	}
 
-	private function evalMember($node, $scope)
-	{
+	private function evalMember($node, $scope) {
 		$obj = $this->eval_($node['object'], $scope);
 		$prop = $node['property'];
 
@@ -720,7 +825,7 @@ class Pkript_Interpreter
 		if (is_string($obj) && $prop === 'length')
 			return mb_strlen(self::stripHtmlMarks($obj), SOURCE_ENCODING);
 
-		if (self::isMethod($obj, $prop)) {
+		if ($this->stdlib->isMethod($obj, $prop)) {
 			// A string method works on the HTML a JSX value holds, not on the
 			// marks around it
 			return new Pkript_Method(self::stripHtmlMarks($obj), $prop);
@@ -729,8 +834,7 @@ class Pkript_Interpreter
 		$this->fail(self::typeName($obj) . ' にプロパティ ' . $prop . ' はありません', $node);
 	}
 
-	private function evalIndex($node, $scope)
-	{
+	private function evalIndex($node, $scope) {
 		$obj = $this->eval_($node['object'], $scope);
 		$index = $this->eval_($node['index'], $scope);
 
@@ -753,8 +857,7 @@ class Pkript_Interpreter
 		$this->fail(self::typeName($obj) . ' は添字アクセスできません', $node);
 	}
 
-	private function evalCall($node, $scope)
-	{
+	private function evalCall($node, $scope) {
 		$callee = $this->eval_($node['callee'], $scope);
 		$args = array();
 		foreach ($node['arguments'] as $a)
@@ -763,31 +866,29 @@ class Pkript_Interpreter
 	}
 
 	/** Also how map / filter / sort reach their callback. */
-	private function callValue($callee, $args, $node)
-	{
+	public function callValue($callee, $args, $node) {
 		if ($callee instanceof Pkript_Func) {
 			return $this->invoke($callee->decl, $args, $callee->scope);
 		}
 		if ($callee instanceof Pkript_Builtin) {
-			return $this->callBuiltin($callee->name, $args, $node);
+			return $this->stdlib->callBuiltin($callee->name, $args, $node);
 		}
 		if ($callee instanceof Pkript_Method) {
-			return $this->callMethod($callee->receiver, $callee->name, $args, $node);
+			return $this->stdlib->callMethod(
+				$callee->receiver, $callee->name, $args, $node);
 		}
 		$this->fail(self::typeName($callee) . ' は関数ではありません', $node);
 	}
 
 
 	/** The script running now, which is not the root one after an import. */
-	private function currentScript()
-	{
+	private function currentScript() {
 		$script = end($this->scriptStack);
 		return $script === FALSE ? $this->script : $script;
 	}
 
 	/** A limit was hit. Not catchable; see Pkript_LimitError. */
-	private function failLimit($message, $node)
-	{
+	public function failLimit($message, $node) {
 		throw new Pkript_LimitError(
 			$message,
 			$this->currentScript(),
@@ -796,8 +897,7 @@ class Pkript_Interpreter
 		);
 	}
 
-	private function fail($message, $node)
-	{
+	public function fail($message, $node) {
 		throw new Pkript_Error(
 			$message,
 			$this->currentScript(),
@@ -810,8 +910,7 @@ class Pkript_Interpreter
 	// Value helpers
 
 	/** Wrap a PHP value handed in by the runtime into a Pkript value. */
-	public static function wrap($v)
-	{
+	public static function wrap($v) {
 		if (is_array($v)) {
 			$items = array();
 			foreach ($v as $item)
@@ -823,10 +922,11 @@ class Pkript_Interpreter
 		return self::stripHtmlMarks($v);
 	}
 
-	public static function typeName($v)
-	{
+	public static function typeName($v) {
 		if (is_string($v))
 			return 'String';
+		if ($v instanceof Pkript_Regex)
+			return 'RegExp';
 		if (is_bool($v))
 			return 'Boolean';
 		if (is_int($v) || is_float($v))
@@ -855,15 +955,13 @@ class Pkript_Interpreter
 	const HTML_CLOSE = "\x02";
 
 	/** Remove the marks that say "this string is already HTML". */
-	public static function stripHtmlMarks($s)
-	{
+	public static function stripHtmlMarks($s) {
 		if (!is_string($s))
 			return $s;
 		return str_replace(array(self::HTML_OPEN, self::HTML_CLOSE), '', $s);
 	}
 
-	private function evalJsx($node, $scope)
-	{
+	private function evalJsx($node, $scope) {
 		$inner = '';
 		foreach ($node['children'] as $child) {
 			if ($child['type'] === 'text') {
@@ -891,8 +989,7 @@ class Pkript_Interpreter
 	}
 
 	/** The opening tag's attributes, with a leading space before each. */
-	private function jsxAttributes($node, $scope)
-	{
+	private function jsxAttributes($node, $scope) {
 		$out = '';
 		foreach ($node['attributes'] as $attr) {
 			$name = $attr['name'];
@@ -927,8 +1024,7 @@ class Pkript_Interpreter
 	 * array renders its elements in order, both as in JSX; everything else
 	 * becomes text.
 	 */
-	private function jsxChild($value)
-	{
+	private function jsxChild($value) {
 		if ($value === NULL || is_bool($value))
 			return '';
 		if ($value instanceof Pkript_Arr) {
@@ -945,8 +1041,7 @@ class Pkript_Interpreter
 	 * and are HTML already. The marks never nest - an element strips them
 	 * from whatever it embeds - so one pass over the string is enough.
 	 */
-	private static function jsxText($s)
-	{
+	private static function jsxText($s) {
 		if (strpos($s, self::HTML_OPEN) === FALSE)
 			return htmlsc($s, ENT_QUOTES);
 
@@ -965,10 +1060,11 @@ class Pkript_Interpreter
 	}
 
 	/** @param array $seen arrays already being written, to stop a cycle */
-	public static function toStringValue($v, $seen = array())
-	{
+	public static function toStringValue($v, $seen = array()) {
 		if (is_string($v))
 			return $v;
+		if ($v instanceof Pkript_Regex)
+			return (string) $v;
 		if (is_bool($v))
 			return $v ? 'true' : 'false';
 		if ($v === NULL)
@@ -1006,8 +1102,7 @@ class Pkript_Interpreter
 		return '';
 	}
 
-	public static function toBool($v)
-	{
+	public static function toBool($v) {
 		if (is_bool($v))
 			return $v;
 		if ($v === NULL)
@@ -1028,8 +1123,7 @@ class Pkript_Interpreter
 	 * with an empty script name - which printed as '(:2行目)' while every other
 	 * error said '(hello:2行目 12列)'.
 	 */
-	private function toNumber($v, $node)
-	{
+	public function toNumber($v, $node) {
 		if (is_int($v) || is_float($v))
 			return $v;
 		if (is_bool($v))
@@ -1049,8 +1143,7 @@ class Pkript_Interpreter
 	}
 
 	/** `===`: arrays and objects compare by identity, like JS. */
-	private static function strictEquals($l, $r)
-	{
+	public static function strictEquals($l, $r) {
 		if (is_object($l) || is_object($r))
 			return $l === $r;
 		if (gettype($l) !== gettype($r))
@@ -1058,8 +1151,7 @@ class Pkript_Interpreter
 		return $l === $r;
 	}
 
-	private static function looseEquals($l, $r)
-	{
+	private static function looseEquals($l, $r) {
 		if (is_string($l) && is_string($r))
 			return $l === $r;
 		if ((is_int($l) || is_float($l)) && (is_int($r) || is_float($r)))
@@ -1073,8 +1165,7 @@ class Pkript_Interpreter
 		return self::toStringValue($l) === self::toStringValue($r);
 	}
 
-	private function compare($l, $r, $node)
-	{
+	private function compare($l, $r, $node) {
 		if (is_string($l) && is_string($r))
 			return strcmp($l, $r);
 		$a = $this->toNumber($l, $node);

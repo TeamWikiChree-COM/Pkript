@@ -1,5 +1,5 @@
 <?php
-// $Id: parser.php,v 0.2 2026/08/31 11:06:32 WikiChree.COM Team Exp $
+// $Id: parser.php,v 0.3 2026/08/31 18:20:16 WikiChree.COM Team Exp $
 
 /**
  * Pkript runtime - parser
@@ -12,8 +12,7 @@
 /////////////////////////////////////////////////
 // Parser
 
-class Pkript_Parser
-{
+class Pkript_Parser {
 	private $tokens;
 	private $pos = 0;
 	private $script;
@@ -42,21 +41,23 @@ class Pkript_Parser
 	// isArrowAhead() results, keyed by token position
 	private $arrowAhead = array();
 
+	// Labels in scope where the parser is now, name => is it on a loop.
+	// `continue` needs a loop; `break` takes either.
+	private $labels = array();
+
 	// `import "name"` at the top of the script
 	private $imports = array();
 
 	// Top level variable declarations, in the order written
 	private $constants = array();
 
-	public function __construct($tokens, $script)
-	{
+	public function __construct($tokens, $script) {
 		$this->tokens = $tokens;
 		$this->script = $script;
 	}
 
 	/** @return array list of function declarations, keyed by name */
-	public function parse()
-	{
+	public function parse() {
 		$functions = array();
 		while (!$this->isEof()) {
 			if ($this->isImportAhead()) {
@@ -85,29 +86,25 @@ class Pkript_Parser
 		return $functions;
 	}
 
-	private function addFunction(&$functions, $fn)
-	{
+	private function addFunction(&$functions, $fn) {
 		$this->claim($functions, $fn['name'], $fn);
 		$functions[$fn['name']] = $fn;
 	}
 
 	/** Functions and constants share one namespace within a script. */
-	private function claim($functions, $name, $node)
-	{
+	private function claim($functions, $name, $node) {
 		if (isset($functions[$name]) || isset($this->constants[$name])) {
 			$this->error($name . ' が二重に定義されています', $node);
 		}
 	}
 
 	/** Top level declarations, in order, run once before the entry point. */
-	public function getConstants()
-	{
+	public function getConstants() {
 		return array_values($this->constants);
 	}
 
 	/** Scripts named by `import`, in the order they were written. */
-	public function getImports()
-	{
+	public function getImports() {
 		return $this->imports;
 	}
 
@@ -115,13 +112,11 @@ class Pkript_Parser
 	 * `import` is not a keyword: it only starts an import when a string
 	 * follows, so a script may still use the word as a name.
 	 */
-	private function isImportAhead()
-	{
+	private function isImportAhead() {
 		return $this->check('ident', 'import') && $this->peek(1)['type'] === 'str';
 	}
 
-	private function parseImport()
-	{
+	private function parseImport() {
 		$kw = $this->next();
 		$name = $this->next();
 		$this->endStatement();
@@ -132,52 +127,44 @@ class Pkript_Parser
 	// Token helpers
 
 	/** Source position of a token, folded into a node with `+`. */
-	private static function at($token)
-	{
+	private static function at($token) {
 		return array('line' => $token['line'], 'col' => $token['col']);
 	}
 
-	private function prev()
-	{
+	private function prev() {
 		return $this->pos > 0 ? $this->tokens[$this->pos - 1] : NULL;
 	}
 
-	private function peek($offset = 0)
-	{
+	private function peek($offset = 0) {
 		$i = $this->pos + $offset;
 		return isset($this->tokens[$i]) ? $this->tokens[$i] : $this->tokens[count($this->tokens) - 1];
 	}
 
-	private function next()
-	{
+	private function next() {
 		$t = $this->peek();
 		if ($t['type'] !== 'eof')
 			$this->pos++;
 		return $t;
 	}
 
-	private function isEof()
-	{
+	private function isEof() {
 		return $this->peek() === NULL || $this->peek()['type'] === 'eof';
 	}
 
-	private function check($type, $value = NULL)
-	{
+	private function check($type, $value = NULL) {
 		$t = $this->peek();
 		if ($t['type'] !== $type)
 			return FALSE;
 		return $value === NULL || $t['value'] === $value;
 	}
 
-	private function accept($type, $value = NULL)
-	{
+	private function accept($type, $value = NULL) {
 		if ($this->check($type, $value))
 			return $this->next();
 		return FALSE;
 	}
 
-	private function expect($type, $value = NULL)
-	{
+	private function expect($type, $value = NULL) {
 		if ($this->check($type, $value))
 			return $this->next();
 		$t = $this->peek();
@@ -186,8 +173,7 @@ class Pkript_Parser
 		$this->error($want . ' が必要ですが ' . $got . ' がありました', $t);
 	}
 
-	private function error($message, $token = NULL)
-	{
+	private function error($message, $token = NULL) {
 		$token = $token === NULL ? $this->peek() : $token;
 		throw new Pkript_Error(
 			$message,
@@ -200,8 +186,7 @@ class Pkript_Parser
 	/////////////////////////////////////////////
 	// Declarations and statements
 
-	private function parseFunction()
-	{
+	private function parseFunction() {
 		$kw = $this->expect('keyword', 'function');
 		$name = $this->expect('ident');
 		$this->expect('op', '(');
@@ -223,8 +208,7 @@ class Pkript_Parser
 	 * `const name = (a, b) => { ... };` at the top level. The same thing as a
 	 * `function name(a, b) { ... }` declaration, so it yields the same node.
 	 */
-	private function parseTopLevelDecl()
-	{
+	private function parseTopLevelDecl() {
 		if (!$this->check('keyword', 'const') && !$this->check('keyword', 'let') &&
 			!$this->check('keyword', 'var')) {
 			$this->error('function か変数宣言が必要です');
@@ -233,8 +217,7 @@ class Pkript_Parser
 		return $this->parseVarDecl();
 	}
 
-	private function parseBlock()
-	{
+	private function parseBlock() {
 		$open = $this->expect('op', '{');
 		$stmts = array();
 		while (!$this->check('op', '}')) {
@@ -247,8 +230,7 @@ class Pkript_Parser
 		return array('type' => 'Block', 'body' => $stmts) + self::at($open);
 	}
 
-	private function parseStatement()
-	{
+	private function parseStatement() {
 		if ($this->check('op', '{'))
 			return $this->parseBlock();
 		if ($this->check('keyword', 'var'))
@@ -263,6 +245,10 @@ class Pkript_Parser
 			return $this->parseIf();
 		if ($this->check('keyword', 'while'))
 			return $this->parseWhile();
+		if ($this->check('keyword', 'do'))
+			return $this->parseDoWhile();
+		if ($this->isLabelAhead())
+			return $this->parseLabelled();
 		if ($this->check('keyword', 'switch'))
 			return $this->parseSwitch();
 		if ($this->check('keyword', 'try'))
@@ -282,8 +268,7 @@ class Pkript_Parser
 		return $this->parseExpressionStatement();
 	}
 
-	private function parseVarDecl($withSemicolon = TRUE)
-	{
+	private function parseVarDecl($withSemicolon = TRUE) {
 		$kw = $this->next();
 		$name = $this->expect('ident');
 		$init = NULL;
@@ -302,8 +287,7 @@ class Pkript_Parser
 		) + self::at($kw);
 	}
 
-	private function parseReturn()
-	{
+	private function parseReturn() {
 		$kw = $this->next();
 		$arg = NULL;
 		if (!$this->check('op', ';') && !$this->check('op', '}')) {
@@ -313,15 +297,80 @@ class Pkript_Parser
 		return array('type' => 'Return', 'argument' => $arg) + self::at($kw);
 	}
 
-	private function parseBreakOrContinue($type)
-	{
+	/**
+	 * `break` / `continue`, each with an optional label.
+	 *
+	 * The label has to be on the same line as the keyword: a newline ends the
+	 * statement, so `break` followed by `foo;` on the next line is a plain
+	 * break and a statement, not a labelled one.
+	 */
+	private function parseBreakOrContinue($type) {
 		$kw = $this->next();
+
+		$label = '';
+		if ($this->check('ident') && $this->peek()['line'] === $kw['line']) {
+			$token = $this->next();
+			$label = $token['value'];
+			if (!isset($this->labels[$label]))
+				$this->error('ラベル ' . $label . ' がありません', $token);
+			if ($type === 'Continue' && !$this->labels[$label]) {
+				$this->error('continue のラベルはループに付いている必要があります',
+					$token);
+			}
+		}
 		$this->endStatement();
-		return array('type' => $type) + self::at($kw);
+		return array('type' => $type, 'label' => $label) + self::at($kw);
 	}
 
-	private function parseIf()
-	{
+	/** `name:` before a statement. `case`/`default` are read by parseSwitch. */
+	private function isLabelAhead() {
+		if (!$this->check('ident'))
+			return FALSE;
+		$after = $this->peek(1);
+		return $after['type'] === 'op' && $after['value'] === ':';
+	}
+
+	/**
+	 * A labelled statement. A label on a loop is folded into the loop node,
+	 * because `continue name` has to be caught by that loop's own iteration
+	 * rather than by a wrapper around it, which would end the loop instead.
+	 * On anything else only `break name` can reach it.
+	 */
+	private function parseLabelled() {
+		$token = $this->next();
+		$name = $token['value'];
+		$this->expect('op', ':');
+
+		if (isset($this->labels[$name]))
+			$this->error('ラベル ' . $name . ' が二重に定義されています', $token);
+
+		static $loops = array('While' => 1, 'DoWhile' => 1, 'For' => 1,
+			'ForIn' => 1, 'ForOf' => 1);
+
+		// Declared before the body is read, so `break name` inside it resolves
+		$this->labels[$name] = $this->isLoopAhead($loops);
+		try {
+			$body = $this->parseStatement();
+		} finally {
+			unset($this->labels[$name]);
+		}
+
+		if (isset($loops[$body['type']])) {
+			$body['label'] = $name;
+			return $body;
+		}
+		return array('type' => 'Labelled', 'label' => $name, 'body' => $body)
+			+ self::at($token);
+	}
+
+	/** Is the statement starting here a loop? Decides what the label may do. */
+	private function isLoopAhead($loops) {
+		unset($loops);
+		return $this->check('keyword', 'while') || $this->check('keyword', 'do') ||
+			$this->check('keyword', 'for');
+	}
+
+	private function parseIf() {
 		$kw = $this->next();
 		$this->expect('op', '(');
 		$test = $this->parseExpression();
@@ -337,20 +386,34 @@ class Pkript_Parser
 		return array('type' => 'If', 'test' => $test, 'then' => $then, 'else' => $else) + self::at($kw);
 	}
 
-	private function parseWhile()
-	{
+	private function parseWhile() {
 		$kw = $this->next();
 		$this->expect('op', '(');
 		$test = $this->parseExpression();
 		$this->expect('op', ')');
 		$body = $this->parseStatement();
-		return array('type' => 'While', 'test' => $test, 'body' => $body) + self::at($kw);
+		return array('type' => 'While', 'test' => $test, 'body' => $body,
+			'label' => '') + self::at($kw);
+	}
+
+	/** `do { ... } while (test);` - the body runs before the test. */
+	private function parseDoWhile() {
+		$kw = $this->next();
+		$body = $this->parseStatement();
+		$this->expect('keyword', 'while');
+		$this->expect('op', '(');
+		$test = $this->parseExpression();
+		$this->expect('op', ')');
+		// The closing semicolon is part of the statement in JavaScript, and
+		// optional here for the same reason every other one is
+		$this->endStatement();
+		return array('type' => 'DoWhile', 'test' => $test, 'body' => $body,
+			'label' => '') + self::at($kw);
 	}
 
 	/** `for (init; test; update)` and `for (let x of expr)`. */
 	/** `try { ... } catch (e) { ... }`. The binding may be left out. */
-	private function parseTry()
-	{
+	private function parseTry() {
 		$kw = $this->next();
 		$block = $this->parseBlock();
 		$this->expect('keyword', 'catch');
@@ -370,8 +433,7 @@ class Pkript_Parser
 	 * `switch (x) { case a: ... default: ... }`, with JavaScript's fall
 	 * through: a case runs on to the next one unless it breaks.
 	 */
-	private function parseSwitch()
-	{
+	private function parseSwitch() {
 		$kw = $this->next();
 		$this->expect('op', '(');
 		$subject = $this->parseExpression();
@@ -413,8 +475,7 @@ class Pkript_Parser
 			+ self::at($kw);
 	}
 
-	private function parseFor()
-	{
+	private function parseFor() {
 		$kw = $this->next();
 		$this->expect('op', '(');
 
@@ -437,7 +498,8 @@ class Pkript_Parser
 				'kind' => $kind['value'],
 				'name' => $name['value'],
 				'subject' => $subject,
-				'body' => $body
+				'body' => $body,
+				'label' => ''
 			) + self::at($kw);
 		}
 
@@ -461,19 +523,18 @@ class Pkript_Parser
 			'init' => $init,
 			'test' => $test,
 			'update' => $update,
-			'body' => $body
+			'body' => $body,
+			'label' => ''
 		) + self::at($kw);
 	}
 
-	private function parseExpressionStatement()
-	{
+	private function parseExpressionStatement() {
 		$expr = $this->parseExpression();
 		$this->endStatement();
 		return array('type' => 'ExprStmt', 'expression' => $expr) + self::at($expr);
 	}
 
-	private function endStatement()
-	{
+	private function endStatement() {
 		if ($this->accept('op', ';'))
 			return;
 		// Allow a missing ';' before '}' or at end of file
@@ -489,13 +550,11 @@ class Pkript_Parser
 	/////////////////////////////////////////////
 	// Expressions
 
-	private function parseExpression()
-	{
+	private function parseExpression() {
 		return $this->parseAssignment();
 	}
 
-	private function parseAssignment()
-	{
+	private function parseAssignment() {
 		$left = $this->parseConditional();
 
 		$t = $this->peek();
@@ -518,8 +577,7 @@ class Pkript_Parser
 		return $left;
 	}
 
-	private function parseConditional()
-	{
+	private function parseConditional() {
 		$test = $this->parseBinary(0);
 		if (!$this->check('op', '?'))
 			return $test;
@@ -536,8 +594,7 @@ class Pkript_Parser
 		) + self::at($q);
 	}
 
-	private function parseBinary($minPrec)
-	{
+	private function parseBinary($minPrec) {
 		$left = $this->parseUnary();
 		while (TRUE) {
 			$t = $this->peek();
@@ -558,8 +615,7 @@ class Pkript_Parser
 		return $left;
 	}
 
-	private function parseUnary()
-	{
+	private function parseUnary() {
 		if ($this->check('op', '!') || $this->check('op', '-') || $this->check('op', '+')) {
 			$op = $this->next();
 			$arg = $this->parseUnary();
@@ -578,8 +634,7 @@ class Pkript_Parser
 		return $this->parsePostfix();
 	}
 
-	private function parsePostfix()
-	{
+	private function parsePostfix() {
 		$expr = $this->parsePrimary();
 		while (TRUE) {
 			if ($this->check('op', '.')) {
@@ -628,8 +683,7 @@ class Pkript_Parser
 		return $expr;
 	}
 
-	private function parsePrimary()
-	{
+	private function parsePrimary() {
 		$t = $this->peek();
 
 		if ($this->isArrowAhead())
@@ -664,6 +718,10 @@ class Pkript_Parser
 			$this->next();
 			return $this->buildJsx($t['value'], $t);
 		}
+		if ($this->check('regex')) {
+			$this->next();
+			return $this->buildRegex($t);
+		}
 		if ($this->check('num') || $this->check('str')) {
 			$this->next();
 			return array('type' => 'Literal', 'value' => $t['value']) + self::at($t);
@@ -686,8 +744,7 @@ class Pkript_Parser
 	}
 
 	/** Is an arrow function starting here? `x => ...` or `(a, b) => ...` */
-	private function isArrowAhead()
-	{
+	private function isArrowAhead() {
 		if ($this->check('ident')) {
 			$after = $this->peek(1);
 			return $after['type'] === 'op' && $after['value'] === '=>';
@@ -724,8 +781,7 @@ class Pkript_Parser
 	 * `(a, b) => { ... }` / `x => x + 1`. An expression body is wrapped in a
 	 * return so every function has the one shape the interpreter runs.
 	 */
-	private function parseArrow()
-	{
+	private function parseArrow() {
 		$start = $this->peek();
 		$params = array();
 
@@ -759,8 +815,7 @@ class Pkript_Parser
 	}
 
 	/** Comma separated parameter names, up to but not including $closeOp. */
-	private function parseParams($closeOp)
-	{
+	private function parseParams($closeOp) {
 		$params = array();
 		if ($this->check('op', $closeOp))
 			return $params;
@@ -777,8 +832,7 @@ class Pkript_Parser
 	 * The parts the lexer collected for a template literal. Each `${...}` was
 	 * tokenized on its own, so each gets its own parser here.
 	 */
-	private function buildTemplate($token)
-	{
+	private function buildTemplate($token) {
 		$parts = array();
 		foreach ($token['value'] as $part) {
 			if ($part['type'] === 'str') {
@@ -792,8 +846,7 @@ class Pkript_Parser
 	}
 
 	/** One expression and nothing after it. Used for `${...}` and JSX `{...}`. */
-	public function parseSingleExpression($what = '${}')
-	{
+	public function parseSingleExpression($what = '${}') {
 		$expr = $this->parseExpression();
 		if (!$this->isEof()) {
 			$this->error($what . ' の中に余分な字句があります');
@@ -816,8 +869,7 @@ class Pkript_Parser
 	 * values are escaped here, once, because they can never change; only the
 	 * braced expressions are left for the interpreter.
 	 */
-	private function buildJsx($node, $token)
-	{
+	private function buildJsx($node, $token) {
 		$attrs = array();
 		foreach ($node['attrs'] as $attr) {
 			$name = $attr['name'];
@@ -860,8 +912,22 @@ class Pkript_Parser
 		);
 	}
 
-	private function parseJsxExpression($part)
-	{
+	/**
+	 * A regex literal. The pattern is checked here rather than when it runs:
+	 * a bad one is then an error before anything happens, and the cached AST
+	 * can only have been built from a pattern that passed.
+	 */
+	private function buildRegex($token) {
+		$re = $token['value'];
+		$reason = Pkript_Regex::check($re['source'], $re['flags']);
+		if ($reason !== '')
+			$this->error($reason, $token);
+
+		return array('type' => 'Regex', 'source' => $re['source'],
+			'flags' => $re['flags']) + self::at($token);
+	}
+
+	private function parseJsxExpression($part) {
 		$inner = new Pkript_Parser($part['tokens'], $this->script);
 		return $inner->parseSingleExpression('JSXの {}');
 	}
@@ -871,8 +937,7 @@ class Pkript_Parser
 	 * shape of a tag is escaped. An '&' that already starts a character
 	 * reference is left alone, so `&amp;` and `&nbsp;` mean what they say.
 	 */
-	private static function escapeJsxSource($text)
-	{
+	private static function escapeJsxSource($text) {
 		$text = preg_replace(
 			'/&(?![A-Za-z][A-Za-z0-9]{1,30};|#[0-9]{1,7};|#[xX][0-9A-Fa-f]{1,6};)/',
 			'&amp;', $text);
@@ -883,8 +948,7 @@ class Pkript_Parser
 	}
 
 	/** `{ key: value, "key": value }` */
-	private function parseObjectLit()
-	{
+	private function parseObjectLit() {
 		$open = $this->next();
 		$props = array();
 		if (!$this->check('op', '}')) {

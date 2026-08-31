@@ -1,5 +1,5 @@
 <?php
-// $Id: security.php,v 0.2 2026/08/31 11:06:32 WikiChree.COM Team Exp $
+// $Id: security.php,v 0.3 2026/08/31 18:20:16 WikiChree.COM Team Exp $
 
 /**
  * Pkript - write token
@@ -10,8 +10,7 @@
  */
 
 /** Per-site secret behind the token, created on first use. FALSE if it cannot be. */
-function plugin_pkript_secret()
-{
+function plugin_pkript_secret() {
 	static $secret = NULL;
 	if ($secret !== NULL)
 		return $secret;
@@ -44,8 +43,7 @@ function plugin_pkript_secret()
  *
  * @return string '' when no secret is available
  */
-function plugin_pkript_token()
-{
+function plugin_pkript_token() {
 	$secret = plugin_pkript_secret();
 	if ($secret === FALSE)
 		return '';
@@ -53,8 +51,7 @@ function plugin_pkript_token()
 }
 
 /** Who the request is authenticated as, '' when nobody. */
-function plugin_pkript_identity()
-{
+function plugin_pkript_identity() {
 	if (isset($_SESSION['authenticated_user']))
 		return (string) $_SESSION['authenticated_user'];
 	if (isset($_SERVER['PHP_AUTH_USER']))
@@ -63,8 +60,7 @@ function plugin_pkript_identity()
 }
 
 /** Does this request carry the token for its own identity? */
-function plugin_pkript_check_token()
-{
+function plugin_pkript_check_token() {
 	global $vars;
 	$want = plugin_pkript_token();
 	if ($want === '')

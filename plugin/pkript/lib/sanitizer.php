@@ -1,5 +1,5 @@
 <?php
-// $Id: sanitizer.php,v 0.2 2026/08/31 11:06:32 WikiChree.COM Team Exp $
+// $Id: sanitizer.php,v 0.3 2026/08/31 18:20:16 WikiChree.COM Team Exp $
 
 /**
  * Pkript runtime - HTML sanitizer
@@ -14,8 +14,7 @@
 //
 // Whitelist based. Anything not explicitly allowed is removed.
 
-class Pkript_Sanitizer
-{
+class Pkript_Sanitizer {
 	private static $allowedTags = array(
 		'b',
 		'strong',
@@ -126,6 +125,10 @@ class Pkript_Sanitizer
 		'date',
 	);
 
+	// Presentation only. Anything that can move an element out of the flow of
+	// the page and put it over the wiki's own chrome - position, z-index,
+	// float to the viewport, background-image - stays out: a script may make
+	// its own output look like anything, but not make it look like the site.
 	private static $allowedStyleProps = array(
 		'color',
 		'background-color',
@@ -162,6 +165,120 @@ class Pkript_Sanitizer
 		'display',
 		'vertical-align',
 		'opacity',
+		'min-width',
+		'min-height',
+		'box-sizing',
+		'box-shadow',
+		'overflow',
+		'overflow-x',
+		'overflow-y',
+		'visibility',
+		'clear',
+		'float',
+
+		// Text
+		'letter-spacing',
+		'word-spacing',
+		'text-indent',
+		'text-transform',
+		'text-shadow',
+		'white-space',
+		'word-break',
+		'overflow-wrap',
+		'text-overflow',
+		'font-variant',
+		'list-style',
+		'list-style-type',
+		'list-style-position',
+
+		// Tables
+		'border-collapse',
+		'border-spacing',
+		'table-layout',
+		'caption-side',
+		'outline',
+		'outline-color',
+		'outline-width',
+		'outline-style',
+		'outline-offset',
+
+		// Flexbox
+		'flex',
+		'flex-direction',
+		'flex-wrap',
+		'flex-flow',
+		'flex-grow',
+		'flex-shrink',
+		'flex-basis',
+		'justify-content',
+		'justify-items',
+		'justify-self',
+		'align-items',
+		'align-content',
+		'align-self',
+		'order',
+		'gap',
+		'row-gap',
+		'column-gap',
+
+		// Grid
+		'grid-template-columns',
+		'grid-template-rows',
+		'grid-template-areas',
+		'grid-auto-columns',
+		'grid-auto-rows',
+		'grid-auto-flow',
+		'grid-area',
+		'grid-column',
+		'grid-row',
+		'grid-column-start',
+		'grid-column-end',
+		'grid-row-start',
+		'grid-row-end',
+		'place-items',
+		'place-content',
+		'place-self',
+
+		// Motion. animation-name can only reach keyframes the skin already
+		// defines: a script cannot write a <style> block, and the sanitizer
+		// would remove one if it did.
+		'transition',
+		'transition-property',
+		'transition-duration',
+		'transition-delay',
+		'transition-timing-function',
+		'animation',
+		'animation-name',
+		'animation-duration',
+		'animation-delay',
+		'animation-iteration-count',
+		'animation-direction',
+		'animation-timing-function',
+		'animation-fill-mode',
+		'animation-play-state',
+		'transform',
+		'transform-origin',
+		'will-change',
+		'cursor',
+		'filter',
+	);
+
+	/**
+	 * Functions a value may use, and nothing else. Each takes numbers,
+	 * lengths, angles, times, percentages or colors - never a URL, an
+	 * attribute or an expression, which is what makes the whole set safe to
+	 * hand to a browser.
+	 */
+	private static $allowedStyleFunctions = array(
+		'rgb', 'rgba', 'hsl', 'hsla',
+		'translate', 'translatex', 'translatey', 'translate3d',
+		'scale', 'scalex', 'scaley', 'scale3d',
+		'rotate', 'rotatex', 'rotatey', 'rotatez', 'rotate3d',
+		'skew', 'skewx', 'skewy', 'matrix', 'perspective',
+		'cubic-bezier', 'steps',
+		'repeat', 'minmax', 'fit-content',
+		'blur', 'brightness', 'contrast', 'grayscale', 'invert',
+		'opacity', 'saturate', 'sepia', 'drop-shadow', 'hue-rotate',
 	);
 
 	private static $allowedDisplay = array(
@@ -170,6 +287,15 @@ class Pkript_Sanitizer
 		'inline-block',
 		'none',
 		'flex',
+		'inline-flex',
+		'grid',
+		'inline-grid',
+		'flow-root',
+		'table',
+		'table-row',
+		'table-cell',
+		'list-item',
+		'contents',
 	);
 
 	// Token that stands in for trusted HTML while the script's output is being
@@ -181,8 +307,7 @@ class Pkript_Sanitizer
 	 * Park trusted HTML and return the token that stands in for it.
 	 * @param array $fragments passed by reference; the caller owns the table
 	 */
-	public static function addFragment(&$fragments, $html)
-	{
+	public static function addFragment(&$fragments, $html) {
 		$index = count($fragments);
 		$fragments[$index] = $html;
 		return self::FRAGMENT_PREFIX . $index . self::FRAGMENT_SUFFIX;
@@ -192,8 +317,7 @@ class Pkript_Sanitizer
 	 * @param string $html      the script's return value
 	 * @param array  $fragments trusted HTML from wiki.convert(), by index
 	 */
-	public static function sanitize($html, $fragments = array())
-	{
+	public static function sanitize($html, $fragments = array()) {
 		// JSX marks which runs of a string are HTML already. They have done
 		// their work by now, and are not meant to reach the page.
 		$html = Pkript_Interpreter::stripHtmlMarks($html);
@@ -245,8 +369,7 @@ class Pkript_Sanitizer
 	 * that a script hid inside an attribute stays inert text: the substitution
 	 * can never open an attribute value or a tag.
 	 */
-	private static function restoreFragments($root, $fragments)
-	{
+	private static function restoreFragments($root, $fragments) {
 		$doc = $root->ownerDocument;
 		$xpath = new DOMXPath($doc);
 		$texts = array();
@@ -283,8 +406,7 @@ class Pkript_Sanitizer
 	}
 
 	/** Parse trusted HTML into a fragment belonging to $doc. */
-	private static function importHtml($doc, $html)
-	{
+	private static function importHtml($doc, $html) {
 		$tmp = new DOMDocument();
 		$prev = libxml_use_internal_errors(TRUE);
 		$ok = $tmp->loadHTML('<?xml encoding="UTF-8"?><div id="pkript-frag">' .
@@ -313,8 +435,7 @@ class Pkript_Sanitizer
 	}
 
 	/** Recursively clean the children of $node. */
-	private static function cleanNode($node)
-	{
+	private static function cleanNode($node) {
 		// Iterate over a snapshot: the live NodeList shifts as we remove nodes
 		$children = array();
 		foreach ($node->childNodes as $child)
@@ -360,8 +481,7 @@ class Pkript_Sanitizer
 		}
 	}
 
-	private static function cleanAttributes($el, $tag)
-	{
+	private static function cleanAttributes($el, $tag) {
 		$attrs = array();
 		foreach ($el->attributes as $attr)
 			$attrs[] = $attr;
@@ -453,8 +573,7 @@ class Pkript_Sanitizer
 	 * Write back a filtered attribute, or drop it when the filter kept nothing
 	 * of it - every filter signals that as NULL or an empty string.
 	 */
-	private static function setOrRemove($el, $attr, $safe)
-	{
+	private static function setOrRemove($el, $attr, $safe) {
 		if ($safe === NULL || $safe === '') {
 			$el->removeAttribute($attr->nodeName);
 		} else {
@@ -463,8 +582,7 @@ class Pkript_Sanitizer
 	}
 
 	/** This wiki's own entry point, for a form with no action of its own. */
-	private static function selfUri()
-	{
+	private static function selfUri() {
 		if (function_exists('get_base_uri'))
 			return get_base_uri();
 		if (function_exists('get_script_uri'))
@@ -473,8 +591,7 @@ class Pkript_Sanitizer
 	}
 
 	/** @return string|NULL the URL, or NULL when it must be dropped */
-	private static function filterUrl($url)
-	{
+	private static function filterUrl($url) {
 		$u = trim($url);
 		// Strip control characters used to smuggle "java\0script:"
 		$u = preg_replace('/[\x00-\x20\x7F]/', '', $u);
@@ -491,8 +608,7 @@ class Pkript_Sanitizer
 		return $u;
 	}
 
-	private static function filterClassOrId($value)
-	{
+	private static function filterClassOrId($value) {
 		$out = array();
 		foreach (preg_split('/\s+/', trim($value)) as $token) {
 			if ($token === '')
@@ -508,8 +624,7 @@ class Pkript_Sanitizer
 	 * Property whitelist plus value pattern checks.
 	 * Properties that fail the check are dropped silently; the element stays.
 	 */
-	private static function filterStyle($style)
-	{
+	private static function filterStyle($style) {
 		// Anything that could start a new context or escape the value
 		if (preg_match('/(expression|javascript:|vbscript:|@import|\\\\|\/\*|url\s*\()/i', $style)) {
 			return '';
@@ -528,7 +643,7 @@ class Pkript_Sanitizer
 
 			if (!in_array($prop, self::$allowedStyleProps, TRUE))
 				continue;
-			if ($value === '' || strlen($value) > 100)
+			if ($value === '' || strlen($value) > 200)
 				continue;
 			if (!self::isValidStyleValue($prop, $value))
 				continue;
@@ -538,8 +653,7 @@ class Pkript_Sanitizer
 		return implode('; ', $out);
 	}
 
-	private static function isValidStyleValue($prop, $value)
-	{
+	private static function isValidStyleValue($prop, $value) {
 		if ($prop === 'display') {
 			return in_array(strtolower($value), self::$allowedDisplay, TRUE);
 		}
@@ -549,24 +663,127 @@ class Pkript_Sanitizer
 		if ($prop === 'color' || $prop === 'background-color' || $prop === 'border-color') {
 			return self::isColor($value);
 		}
+		if ($prop === 'grid-template-areas') {
+			// Quoted row names, which nothing else in a style value uses
+			return preg_match('/^(?:"[a-zA-Z0-9_. -]{0,60}"\s*)+$/', $value) === 1;
+		}
 
-		// Everything else: a space-separated list of colors, lengths and keywords
-		foreach (preg_split('/\s+/', $value) as $token) {
+		// Everything else: colors, lengths, keywords and the allowed
+		// functions, in any order. Commas separate arguments and list items
+		// and carry no meaning of their own here.
+		foreach (self::styleTokens($value) as $token) {
+			$token = rtrim($token, ',');
 			if ($token === '')
 				continue;
 			if (self::isColor($token))
 				continue;
 			if (self::isLength($token))
 				continue;
-			if (preg_match('/^[a-z-]{1,20}$/i', $token))
-				continue; // keyword: bold, solid, center...
+			if (self::isStyleFunction($token))
+				continue;
+			if (preg_match('/^[a-z][a-z0-9-]{0,29}$/i', $token))
+				continue; // keyword: bold, solid, center, ease-in-out...
 			return FALSE;
 		}
 		return TRUE;
 	}
 
-	private static function isColor($value)
-	{
+	/**
+	 * Split on whitespace, but keep a function call together: `rgba(0, 0, 0,
+	 * .5)` is one token even though it has spaces in it. Unbalanced
+	 * parentheses end up in a token that no check accepts, so the declaration
+	 * is dropped.
+	 */
+	private static function styleTokens($value) {
+		$tokens = array();
+		$current = '';
+		$depth = 0;
+		$n = strlen($value);
+
+		for ($i = 0; $i < $n; $i++) {
+			$ch = $value[$i];
+			if ($ch === '(') $depth++;
+			if ($ch === ')') $depth--;
+			if ($depth < 0)
+				return array($value);   // ')' with nothing open: refuse it whole
+
+			if ($depth === 0 && ($ch === ' ' || $ch === "\t" || $ch === "\n")) {
+				if ($current !== '') {
+					$tokens[] = $current;
+					$current = '';
+				}
+				continue;
+			}
+			$current .= $ch;
+		}
+		if ($depth !== 0)
+			return array($value);
+		if ($current !== '')
+			$tokens[] = $current;
+		return $tokens;
+	}
+
+	/**
+	 * A call to one of the allowed functions, with only numbers, lengths,
+	 * percentages, keywords and nested allowed calls inside it.
+	 */
+	private static function isStyleFunction($token, $depth = 0) {
+		if ($depth > 3)
+			return FALSE;
+		if (!preg_match('/^([a-z][a-z0-9-]{0,19})\((.*)\)$/is', $token, $m))
+			return FALSE;
+		if (!in_array(strtolower($m[1]), self::$allowedStyleFunctions, TRUE))
+			return FALSE;
+
+		foreach (self::splitArguments($m[2]) as $arg) {
+			$arg = trim($arg);
+			if ($arg === '')
+				continue;
+			if (self::isLength($arg) || self::isColor($arg))
+				continue;
+			if (self::isStyleFunction($arg, $depth + 1))
+				continue;
+			if (preg_match('/^[a-z][a-z0-9-]{0,29}$/i', $arg))
+				continue;
+			// `repeat(3, 1fr)` and `steps(4, end)` put two values in one
+			// argument only when written with spaces, so try those too
+			$parts = preg_split('/\s+/', $arg);
+			if (count($parts) < 2)
+				return FALSE;
+			foreach ($parts as $part) {
+				if (!self::isLength($part) && !self::isColor($part) &&
+					!self::isStyleFunction($part, $depth + 1) &&
+					!preg_match('/^[a-z][a-z0-9-]{0,29}$/i', $part)) {
+					return FALSE;
+				}
+			}
+		}
+		return TRUE;
+	}
+
+	/** Top level commas only, so a nested call keeps its own arguments. */
+	private static function splitArguments($text) {
+		$args = array();
+		$current = '';
+		$depth = 0;
+		$n = strlen($text);
+
+		for ($i = 0; $i < $n; $i++) {
+			$ch = $text[$i];
+			if ($ch === '(') $depth++;
+			if ($ch === ')') $depth--;
+			if ($ch === ',' && $depth === 0) {
+				$args[] = $current;
+				$current = '';
+				continue;
+			}
+			$current .= $ch;
+		}
+		$args[] = $current;
+		return $args;
+	}
+
+	private static function isColor($value) {
 		$v = trim($value);
 		if (preg_match('/^#([0-9a-f]{3}|[0-9a-f]{6})$/i', $v))
 			return TRUE;
@@ -579,9 +796,15 @@ class Pkript_Sanitizer
 		return FALSE;
 	}
 
-	private static function isLength($value)
-	{
-		if (!preg_match('/^-?\d{1,6}(\.\d{1,3})?(px|em|rem|%|pt)?$/i', $value))
+	// Lengths, angles, times and the grid's fraction. No viewport units: a
+	// script sizing itself against the window is how an overlay is built.
+	private static function isLength($value) {
+		if (!preg_match('/^[+-]?\d{0,6}(\.\d{1,4})?' .
+				'(px|em|rem|ex|ch|%|pt|pc|cm|mm|in|fr|deg|grad|rad|turn|ms|s)?$/i',
+				$value)) {
+			return FALSE;
+		}
+		if (!preg_match('/\d/', $value))
 			return FALSE;
 		// Reject absurd values used to break the layout
 		$n = (float) $value;
