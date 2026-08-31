@@ -3,6 +3,7 @@ PukiWikiのプラグインをJavaScript風の構文で書くためのスクリ�
 PHPへの直接到達を遮断し、出力もサニタイズされるため、ホスティング環境や第三者によるスクリプトでも安全に動作します。
 
 - リファレンス: https://wikichree.com/guide/?Pkript
+- ドキュメント: [docs/](docs/README.md)
 
 ## 配置
 
