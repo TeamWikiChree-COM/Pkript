@@ -10,10 +10,10 @@ PHPへの直接到達を遮断し、出力もサニタイズされるため、�
 
 ```text
 plugin/
-  pkript.inc.php
+  pkript.inc.php    # 入口と設定
   pkript/
-    *.php     # ランタイム
-    script/   # スクリプト (.pks / .js)
+    lib/            # ランタイム (.php)
+    script/         # スクリプト (.pks / .js)
 ```
 
 ## クイックスタート
@@ -73,11 +73,26 @@ var who = e.vars["who"];    // 送信されたフォーム値 (パスワード�
 
 ### 主な言語機能
 
-- 変数: `var`, `let`, `const`, 未宣言代入（`$args = ...` も可）
+- 変数: `var`, `let`, `const`, 未宣言代入（`$args = ...` も可）。関数の外側にも書けます
 - 関数: `function` 宣言、アロー関数（`const double = x => x * 2;`）
+- 制御構文: `if`, `while`, `for`, `for..of`, `for..in`, `switch`, `try`/`catch`
 - 配列操作: `map`, `filter`, `find`, `findIndex`, `sort`, `push`, `pop`, `join`, `slice`
 - モジュール読み込み: `import "util";`
 - セミコロン: 改行があれば省略可能
+
+### HTMLの組み立て
+
+文字列連結のほかに、テンプレートリテラルとJSX記法が使えます。
+
+```javascript
+// テンプレートリテラル
+return `<p class="${cls}">${htmlsc(name)}</p>`;
+
+// JSX記法（{} の中は自動でエスケープされます）
+return <p class={cls}>{name}</p>;
+```
+
+JSXの `{}` は自動でエスケープするので、`htmlsc()` を重ねると二重エスケープになります。
 
 ### 主なAPI
 
@@ -120,7 +135,15 @@ define('PKRIPT_ALLOW_PAGE_SCRIPT', 1);
 
 // 凍結ページのみ実行を許可するか
 define('PKRIPT_PAGE_SCRIPT_FROZEN_ONLY', 0);
+
+// JSX記法を使えるようにするか
+define('PKRIPT_JSX', 1);
+
+// #hello のようにスクリプト名で直接呼び出せるようにするか
+define('PKRIPT_BIND', 1);
 ```
+
+実行時間、メモリ、ページ書き込み回数などの上限も定数で調整できます。リファレンスの `Pkript/設定` を参照してください。
 
 ## ライセンス
 - MIT License
