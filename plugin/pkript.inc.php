@@ -1,5 +1,5 @@
 <?php
-// $Id: pkript.inc.php,v 0.3 2026/08/31 18:20:16 WikiChree.COM Team Exp $
+// $Id: pkript.inc.php,v 0.4 2026/09/01 22:34:53 WikiChree.COM Team Exp $
 
 /**
  * @link https://wikichree.com/guide/?Pkript
@@ -18,36 +18,12 @@
 /////////////////////////////////////////////////
 // Runtime
 //
-// Everything lives in plugin/pkript/lib/. This file is the entry points,
-// the configuration, and nothing else.
-
-foreach (array(
-	'error',
-	'budget',
-	'values',
-	'regex',
-	'lexer',
-	'parser',
-	'scope',
-	'stdlib',
-	'interpreter',
-	'sanitizer',
-	'cache',
-	'loader',
-	'security',
-	'run'
-) as $pkript_module) {
-	require_once dirname(__FILE__) . '/pkript/lib/' . $pkript_module . '.php';
-}
-unset($pkript_module);
+require_once dirname(__FILE__) . '/pkript/lib/boot.php';
+require_once dirname(__FILE__) . '/pkript/lib/adapters/pukiwiki/boot.php';
 
 /////////////////////////////////////////////////
 // Configuration
 //
-// Override any of these from pukiwiki.ini.php. See README.md 9.2 and 9.4 for
-// what the values mean and how they were chosen.
-
-// --- where scripts come from ---
 
 // Script files, relative to DATA_HOME. Under plugin/ because the web server
 // already denies that directory: script source is not meant to be fetchable.
@@ -209,6 +185,13 @@ if (!defined('PKRIPT_MAX_LOG_BYTES'))
 // Line and column numbers in error messages, and console.log output
 if (!defined('PKRIPT_DEBUG'))
 	define('PKRIPT_DEBUG', 1);
+
+/////////////////////////////////////////////////
+// Anything above that this wiki did not set - because a newer runtime wants a
+// setting this file has not heard of yet - falls back here. Loaded last on
+// purpose: every value above stays the one that wins.
+
+require_once dirname(__FILE__) . '/pkript/lib/defaults.php';
 
 /////////////////////////////////////////////////
 // Plugin entry points
