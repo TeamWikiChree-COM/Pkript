@@ -1,5 +1,5 @@
 <?php
-// $Id: registry.php,v 0.3 2026/08/31 18:20:16 WikiChree.COM Team Exp $
+// $Id: registry.php,v 0.4 2026/09/01 22:34:53 WikiChree.COM Team Exp $
 
 /**
  * Pkript runtime - standard library registry
@@ -10,72 +10,46 @@
  */
 
 /**
- * The whole standard library: nothing outside the three tables below is
- * reachable from a script.
+ * The whole standard library: nothing the loaded packages name is out of a
+ * script's reach, and nothing else is in it.
  *
  * Every lookup - what globals exist, whether `"a".foo` is a method, where a
- * call goes - is answered from here, so the tables are the one place to read
- * to know a script's reach, and the one place to edit to widen it.
+ * call goes - is answered from here, so this is the one place to read to know
+ * how a lookup is resolved. What there is to look up is the packages' to say;
+ * see std/package.php.
  */
 class Pkript_Stdlib {
-	/** API namespace -> module class. */
-	private static $namespaces = array(
-		'html' => 'Pkript_Std_Html',
-		'url' => 'Pkript_Std_Url',
-		'JSON' => 'Pkript_Std_Json',
-		'date' => 'Pkript_Std_Date',
-		'Math' => 'Pkript_Std_Math',
-		'Object' => 'Pkript_Std_Object',
-		'wiki' => 'Pkript_Std_Wiki',
-		'data' => 'Pkript_Std_Data',
-		'console' => 'Pkript_Std_Console',
-	);
+	/** API namespace -> module class, merged from the packages. */
+	private $namespaces = array();
 
 	/** Value type label -> methods class. See typeOf(). */
-	private static $types = array(
-		'String' => 'Pkript_Std_StringMethods',
-		'Array' => 'Pkript_Std_ArrayMethods',
-		'Number' => 'Pkript_Std_NumberMethods',
-		'RegExp' => 'Pkript_Std_RegexMethods',
-	);
+	private $types = array();
 
-	/**
-	 * Bare names, each resolved to a namespaced member before dispatch.
-	 *
-	 * The PukiWiki spellings are here so code moved over from a PHP plugin
-	 * works as written; the rest are the language's own conversions and
-	 * argument helpers, which have no namespace to live in.
-	 */
-	private static $globals = array(
-		'htmlsc' => 'html.escape',
-		'is_page' => 'wiki.exists',
-		'make_pagelink' => 'wiki.link',
-		'convert_html' => 'wiki.convert',
-		'strip_bracket' => 'wiki.stripBracket',
-		'get_source' => 'wiki.source',
-		'get_existpages' => 'wiki.pages',
-		'encode' => 'wiki.encode',
-		'decode' => 'wiki.decode',
-		'get_filetime' => 'wiki.time',
-		'is_freeze' => 'wiki.isFrozen',
-		'format_date' => 'date.format',
+	/** Bare name -> the namespaced member it stands for. */
+	private $globals = array();
 
-		'func_get_args' => 'lang.func_get_args',
-		'func_num_args' => 'lang.func_num_args',
-		'func_get_arg' => 'lang.func_get_arg',
-		'String' => 'lang.String',
-		'Number' => 'lang.Number',
-		'Boolean' => 'lang.Boolean',
-	);
+	/** Bare name -> value. */
+	private $constants = array();
 
-	/** Backs the global names above; has no namespace of its own. */
+	/** Backs the bare conversion names; has no namespace of its own. */
 	private static $langModule = 'Pkript_Std_Lang';
 
 	private $rt;
 	private $modules = array();
 
-	public function __construct($rt) {
+	/**
+	 * Later packages win, so an environment can replace a namespace rather
+	 * than only add one. Nothing is constructed here - a package names
+	 * classes, and module() builds one the first time a script reaches it.
+	 */
+	public function __construct($rt, $packages) {
 		$this->rt = $rt;
+		foreach ($packages as $package) {
+			$this->namespaces = array_merge($this->namespaces, $package->namespaces());
+			$this->types      = array_merge($this->types,      $package->types());
+			$this->globals    = array_merge($this->globals,    $package->globals());
+			$this->constants  = array_merge($this->constants,  $package->constants());
+		}
 	}
 
 	/////////////////////////////////////////////
@@ -84,14 +58,27 @@ class Pkript_Stdlib {
 	/** @return array namespace name -> member names, for the global scope. */
 	public function namespaces() {
 		$out = array();
-		foreach (self::$namespaces as $name => $class)
+		foreach ($this->namespaces as $name => $class)
 			$out[$name] = $class::members();
+		return $out;
+	}
+
+	/** @return array namespace name -> (member name -> value), e.g. Math.PI. */
+	public function namespaceConstants() {
+		$out = array();
+		foreach ($this->namespaces as $name => $class)
+			$out[$name] = $class::constants();
 		return $out;
 	}
 
 	/** @return array bare global function names. */
 	public function globalFunctions() {
-		return array_keys(self::$globals);
+		return array_keys($this->globals);
+	}
+
+	/** @return array bare global name -> value, e.g. NaN. */
+	public function globalConstants() {
+		return $this->constants;
 	}
 
 	/** The name a script sees for a value's type, or NULL if it has no methods. */
@@ -111,7 +98,7 @@ class Pkript_Stdlib {
 		$label = self::typeOf($value);
 		if ($label === NULL)
 			return FALSE;
-		$class = self::$types[$label];
+		$class = $this->types[$label];
 		return in_array($name, $class::methods(), TRUE);
 	}
 
@@ -119,7 +106,7 @@ class Pkript_Stdlib {
 	// Dispatch
 
 	public function callBuiltin($name, $args, $node) {
-		$canonical = isset(self::$globals[$name]) ? self::$globals[$name] : $name;
+		$canonical = isset($this->globals[$name]) ? $this->globals[$name] : $name;
 		$dot = strpos($canonical, '.');
 
 		if ($dot !== FALSE) {
@@ -133,28 +120,28 @@ class Pkript_Stdlib {
 			if ($class !== NULL && in_array($member, $class::members(), TRUE))
 				return $this->module($ns)->call($member, $args, $node);
 		}
-		$this->rt->fail('未定義の組み込み関数 ' . $name, $node);
+		$this->rt->fail('Undefined builtin ' . $name, $node);
 	}
 
 	public function callMethod($recv, $name, $args, $node) {
 		$label = self::typeOf($recv);
 		if ($label === NULL) {
-			$this->rt->fail(Pkript_Interpreter::typeName($recv) .
-				' にメソッド ' . $name . ' はありません', $node);
+			$this->rt->fail(Pkript_Interpreter::typeName($recv) . '.' .
+				$name . ' is not a function', $node);
 		}
-		$class = self::$types[$label];
+		$class = $this->types[$label];
 		if (!in_array($name, $class::methods(), TRUE)) {
-			$this->rt->fail($label . ' にメソッド ' . $name . ' はありません', $node);
+			$this->rt->fail($label . '.' . $name . ' is not a function', $node);
 		}
 		return $this->module($label)->call($recv, $name, $args, $node);
 	}
 
 	/** @return string|NULL the class registered under $key */
 	private function classFor($key) {
-		if (isset(self::$namespaces[$key]))
-			return self::$namespaces[$key];
-		if (isset(self::$types[$key]))
-			return self::$types[$key];
+		if (isset($this->namespaces[$key]))
+			return $this->namespaces[$key];
+		if (isset($this->types[$key]))
+			return $this->types[$key];
 		return $key === 'lang' ? self::$langModule : NULL;
 	}
 

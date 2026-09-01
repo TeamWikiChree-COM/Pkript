@@ -73,7 +73,7 @@ class Pkript_Regex_Runner {
 	private function want($value, $node) {
 		if (!($value instanceof Pkript_Regex)) {
 			$this->rt->fail(Pkript_Interpreter::typeName($value) .
-				' は正規表現ではありません', $node);
+				' is not a RegExp', $node);
 		}
 		return $value;
 	}
@@ -147,7 +147,7 @@ class Pkript_Regex_Runner {
 			return -1;
 		// preg gives a byte offset; every other index in this runtime counts
 		// characters, so convert before it is handed over
-		return mb_strlen(substr($subject, 0, $m[0][1]), SOURCE_ENCODING);
+		return mb_strlen(substr($subject, 0, $m[0][1]), PKRIPT_ENCODING);
 	}
 
 	/**
@@ -164,7 +164,7 @@ class Pkript_Regex_Runner {
 		}, $node);
 
 		if ($out === NULL)
-			$this->rt->fail('正規表現の置換に失敗しました', $node);
+			$this->rt->fail('Regular expression replace failed', $node);
 		return $this->rt->checkString($out, $node);
 	}
 
@@ -176,7 +176,7 @@ class Pkript_Regex_Runner {
 		}, $node);
 
 		if ($parts === FALSE)
-			$this->rt->fail('正規表現の分割に失敗しました', $node);
+			$this->rt->fail('Regular expression split failed', $node);
 		return new Pkript_Arr($this->rt->checkArray($parts, $node));
 	}
 

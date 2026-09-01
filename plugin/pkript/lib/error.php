@@ -1,5 +1,5 @@
 <?php
-// $Id: error.php,v 0.3 2026/08/31 18:20:16 WikiChree.COM Team Exp $
+// $Id: error.php,v 0.4 2026/09/01 22:34:53 WikiChree.COM Team Exp $
 
 /**
  * Pkript runtime - error type
@@ -26,15 +26,30 @@ class Pkript_Error extends Exception {
 	}
 
 	/**
+	 * Move the reported line numbers by $n.
+	 *
+	 * For source the runtime assembled rather than read: #pks wraps the text
+	 * on the page in a function declaration, so every line inside it is one
+	 * further down than the author wrote it. Shifting here rather than at
+	 * every throw site keeps the wrapping the concern of whoever did it.
+	 */
+	public function shiftLines($n) {
+		$this->psLine += $n;
+		return $this;
+	}
+
+	/**
 	 * Message shown to the user. Never exposes file paths or PHP internals.
+	 *
+	 * The place is written script:line:col, the way a JavaScript stack trace
+	 * writes one. Without PKRIPT_DEBUG there is no column to write.
 	 */
 	public function getScriptMessage() {
 		$where = '';
 		if ($this->psLine > 0) {
-			$where = ' (' . $this->psScript . ':' . $this->psLine . '行目';
-			if (PKRIPT_DEBUG && $this->psCol > 0) {
-				$where .= ' ' . $this->psCol . '列';
-			}
+			$where = ' (' . $this->psScript . ':' . $this->psLine;
+			if (PKRIPT_DEBUG && $this->psCol > 0)
+				$where .= ':' . $this->psCol;
 			$where .= ')';
 		}
 		return $this->getMessage() . $where;

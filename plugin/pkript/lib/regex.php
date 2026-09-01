@@ -79,7 +79,7 @@ class Pkript_Regex {
 	 */
 	public static function check($source, $flags) {
 		if (strlen($source) > PKRIPT_MAX_REGEX) {
-			return '正規表現が長すぎます (上限 ' . PKRIPT_MAX_REGEX . 'バイト)';
+			return 'Regular expression too long (limit ' . PKRIPT_MAX_REGEX . ' bytes)';
 		}
 
 		$seen = array();
@@ -87,21 +87,21 @@ class Pkript_Regex {
 		for ($i = 0; $i < $n; $i++) {
 			$flag = $flags[$i];
 			if (strpos(self::FLAGS, $flag) === FALSE)
-				return '正規表現のフラグ ' . $flag . ' は使えません';
+				return 'Invalid regular expression flag ' . $flag . ' is not allowed';
 			if (isset($seen[$flag]))
-				return '正規表現のフラグ ' . $flag . ' が重複しています';
+				return 'Invalid regular expression flag ' . $flag . ' is duplicated';
 			$seen[$flag] = TRUE;
 		}
 
 		$refused = self::refusedConstruct($source);
 		if ($refused !== '')
-			return '正規表現で ' . $refused . ' は使えません';
+			return 'Regular expression: ' . $refused . ' is not allowed';
 
 		$re = new self($source, $flags);
 		// Compiling is the only complete check; a warning here would be the
 		// PHP notice for a bad pattern, which the script must not see
 		if (@preg_match($re->pattern(), '') === FALSE)
-			return '正規表現が不正です';
+			return 'Invalid regular expression';
 
 		return '';
 	}
@@ -187,16 +187,16 @@ class Pkript_Regex {
 	private static function errorMessage($error) {
 		switch ($error) {
 			case PREG_BACKTRACK_LIMIT_ERROR:
-				return '正規表現の処理量が上限を超えました (上限 ' .
+				return 'Regular expression backtrack limit exceeded (limit ' .
 					PKRIPT_REGEX_BACKTRACK . ')';
 			case PREG_RECURSION_LIMIT_ERROR:
-				return '正規表現の再帰が深すぎます';
+				return 'Regular expression recursion too deep';
 			case PREG_BAD_UTF8_ERROR:
 			case PREG_BAD_UTF8_OFFSET_ERROR:
-				return '正規表現の対象がUTF-8として不正です';
+				return 'Regular expression subject is not valid UTF-8';
 			case PREG_JIT_STACKLIMIT_ERROR:
-				return '正規表現の処理量が上限を超えました';
+				return 'Regular expression backtrack limit exceeded';
 		}
-		return '正規表現の実行に失敗しました';
+		return 'Regular expression failed';
 	}
 }

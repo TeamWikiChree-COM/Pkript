@@ -1,5 +1,5 @@
 <?php
-// $Id: data.php,v 0.3 2026/08/31 12:00:00 WikiChree.COM Team Exp $
+// $Id: data.php,v 0.4 2026/09/01 22:34:53 WikiChree.COM Team Exp $
 
 /**
  * Pkript runtime - data namespace
@@ -12,11 +12,10 @@
 /**
  * A place for a script to keep something between requests.
  *
- * Each key is one wiki page under PKRIPT_DATA_PREFIX holding the value as
- * JSON. Pages, rather than a file of the plugin's own, because a wiki already
- * knows how to store, back up, diff and restore a page - and because an
- * administrator can then read and fix what a script wrote with the editor
- * they already have.
+ * Where that is depends on the environment and is none of this module's
+ * business: it settles Pkript's own rules - the store being on at all, what
+ * a key may look like, how much trust a write needs, JSON, the budget - and
+ * hands plain text to Pkript_Store. See adapter/store.php for the line.
  *
  * Writing goes through exactly the same policy as wiki.write(): an action, a
  * POST, a token and enough trust. A store that could be written while a page
@@ -54,21 +53,26 @@ class Pkript_Std_Data extends Pkript_Std_Module {
 			case 'keys':
 				return $this->keys($this->strArg($args, 0, ''), $node);
 
-			// Whether a form would be worth drawing at all. Only the store
-			// side of the policy, since the form supplies the rest.
+			// Whether a form would be worth drawing at all. Only the standing
+			// refusals, since the form supplies what requestRefusal() wants.
 			case 'canWrite':
 				return $this->storeRefusal($this->strArg($args, 0)) === '';
 		}
+	}
+
+	/** @return Pkript_Store */
+	private function store() {
+		return $this->rt->env()->store();
 	}
 
 	/////////////////////////////////////////////
 	// Keys
 
 	/**
-	 * A key names a page, so what may be in one is decided here rather than
-	 * by whatever the page name turns out to be. Segments of letters, digits,
-	 * '_' and '-', joined by '/', and no segment may be '.' or '..': a key
-	 * can only ever name a page under the prefix.
+	 * A key names a place in the store, so what may be in one is decided here
+	 * rather than by whatever that place turns out to be. Segments of
+	 * letters, digits, '_' and '-', joined by '/', and no segment may be '.'
+	 * or '..': a key can only ever name something the store put there.
 	 */
 	private static function isKey($key) {
 		if ($key === '' || strlen($key) > 128)
@@ -76,10 +80,10 @@ class Pkript_Std_Data extends Pkript_Std_Module {
 		return preg_match('#^[A-Za-z0-9_-]+(?:/[A-Za-z0-9_-]+)*$#', $key) === 1;
 	}
 
-	private function page($key, $node) {
+	private function checkKey($key, $node) {
 		if (!self::isKey($key))
-			$this->rt->fail('データ名が不正です: ' . $key, $node);
-		return PKRIPT_DATA_PREFIX . $key;
+			$this->rt->fail('Invalid data name: ' . $key, $node);
+		return $key;
 	}
 
 	/////////////////////////////////////////////
@@ -89,17 +93,17 @@ class Pkript_Std_Data extends Pkript_Std_Module {
 	 * @param mixed $default what to return when the key was never written
 	 */
 	private function get($key, $default, $node) {
-		$page = $this->page($key, $node);
+		$this->checkKey($key, $node);
 		$this->spendRead($node);
 
-		if (!PKRIPT_ALLOW_DATA || !is_page($page) || !function_exists('get_source'))
+		if (!PKRIPT_ALLOW_DATA)
 			return $default;
 
-		$text = self::unwrap(get_source($page, TRUE, TRUE));
-		if ($text === '')
+		$text = $this->store()->get($key);
+		if ($text === NULL || $text === '')
 			return $default;
 
-		// set() wrote it, so it parses - unless a person edited the page by
+		// set() wrote it, so it parses - unless a person edited the store by
 		// hand and got it wrong. That is worth saying plainly rather than
 		// reporting as a JSON syntax error against a page they cannot see.
 		try {
@@ -107,78 +111,35 @@ class Pkript_Std_Data extends Pkript_Std_Module {
 		} catch (Pkript_LimitError $limit) {
 			throw $limit;   // a limit is never a "broken data" answer
 		} catch (Pkript_Error $e) {
-			$this->rt->fail('データ ' . $key . ' が壊れています', $node);
+			$this->rt->fail('Data ' . $key . ' is corrupt', $node);
 		}
-	}
-
-	/**
-	 * The JSON back out of the page PukiWiki actually stored.
-	 *
-	 * page_write() does two things to whatever it is handed, and both of them
-	 * are why this is not just trim():
-	 *
-	 *   - add_author_info() puts an #author(...) line on the front of every
-	 *     page, so the first line is never the value;
-	 *   - make_str_rules() rewrites &now;, &date;, &page; and friends -
-	 *     except on lines that start with a space, which is why wrap() puts
-	 *     one there.
-	 */
-	private static function unwrap($text) {
-		$text = function_exists('remove_author_info')
-			? remove_author_info($text)
-			: preg_replace('/^\s*#author\([^\n]*(\n|$)/', '', $text);
-
-		$out = array();
-		foreach (explode("\n", $text) as $line) {
-			// The one space wrap() added, and no more: everything after it is
-			// the value as it was written
-			if (isset($line[0]) && $line[0] === ' ')
-				$line = substr($line, 1);
-			$out[] = $line;
-		}
-		return trim(implode("\n", $out));
-	}
-
-	/**
-	 * The page text for a value. The leading space is what keeps
-	 * make_str_rules() from rewriting the JSON, and it makes the page render
-	 * as a preformatted block rather than as broken wiki markup, so an
-	 * administrator opening it sees the value.
-	 */
-	private static function wrap($json) {
-		$out = array();
-		foreach (explode("\n", $json) as $line)
-			$out[] = ' ' . $line;
-		return implode("\n", $out) . "\n";
 	}
 
 	private function has($key, $node) {
-		$page = $this->page($key, $node);
+		$this->checkKey($key, $node);
 		$this->spendRead($node);
-		return PKRIPT_ALLOW_DATA && is_page($page);
+		return PKRIPT_ALLOW_DATA && $this->store()->has($key);
 	}
 
 	/** Every key, or the ones under $prefix. Sorted, so listings are stable. */
 	private function keys($prefix, $node) {
 		if ($prefix !== '' && !self::isKey($prefix))
-			$this->rt->fail('データ名が不正です: ' . $prefix, $node);
-		if (!PKRIPT_ALLOW_DATA || !function_exists('get_existpages'))
+			$this->rt->fail('Invalid data name: ' . $prefix, $node);
+		if (!PKRIPT_ALLOW_DATA)
 			return new Pkript_Arr();
 		$this->spendRead($node);
 
-		$under = PKRIPT_DATA_PREFIX . $prefix;
+		// A store may hand back whatever it happens to hold; only what this
+		// module would accept as a key is a key.
 		$out = array();
-		foreach (get_existpages() as $page) {
-			if (strpos($page, $under) !== 0)
-				continue;
-			$key = substr($page, strlen(PKRIPT_DATA_PREFIX));
+		foreach ($this->store()->keys($prefix) as $key) {
 			if (self::isKey($key))
 				$out[] = $key;
 		}
 		sort($out);
 
 		if (count($out) > PKRIPT_MAX_PAGES) {
-			$this->rt->failLimit('ページ数が上限を超えました (上限 ' .
+			$this->rt->failLimit('Too many pages (limit ' .
 				PKRIPT_MAX_PAGES . ')', $node);
 		}
 		return new Pkript_Arr($this->rt->checkArray($out, $node));
@@ -197,29 +158,22 @@ class Pkript_Std_Data extends Pkript_Std_Module {
 	 */
 	private function refusal($key) {
 		$refusal = $this->storeRefusal($key);
-		if ($refusal !== '')
-			return $refusal;
-
-		// The page checks Pkript_Std_WikiWriter adds - ':' pages, freezing,
-		// $edit_auth_pages - are about pages people write. Every page here is
-		// under ':config' by design, so only the request half applies.
-		$writer = new Pkript_Std_WikiWriter($this->rt);
-		return $writer->requestRefusal();
+		return $refusal !== '' ? $refusal : $this->store()->requestRefusal();
 	}
 
-	/** What no form can change: this script, this key, this wiki. */
+	/**
+	 * What no form can change: this script, this key, this store.
+	 *
+	 * How far a script has to be trusted to write is the store's to say,
+	 * since only the host knows what its trust levels mean; the run's own
+	 * level is passed along and not read here.
+	 */
 	private function storeRefusal($key) {
 		if (!PKRIPT_ALLOW_DATA)
-			return 'データ保存は無効になっています';
+			return 'The data store is disabled';
 		if (!self::isKey($key))
-			return 'データ名が不正です';
-		if ($this->rt->trust() < PKRIPT_DATA_MIN_TRUST)
-			return 'このスクリプトはデータを書き込めません';
-		if (defined('PKWK_READONLY') && PKWK_READONLY)
-			return 'Wikiが読み取り専用です';
-		if (!function_exists('page_write'))
-			return 'この環境ではページを書き込めません';
-		return '';
+			return 'Invalid data name';
+		return $this->store()->refusal($this->rt->trust());
 	}
 
 	private function set($key, $value, $node) {
@@ -229,37 +183,33 @@ class Pkript_Std_Data extends Pkript_Std_Module {
 
 		$text = $this->json()->stringify($value, 0, $node);
 		if (strlen($text) > PKRIPT_MAX_PAGE_BYTES) {
-			$this->rt->failLimit('データが大きすぎます (上限 ' .
-				PKRIPT_MAX_PAGE_BYTES . 'バイト)', $node);
+			$this->rt->failLimit('Data too large (limit ' .
+				PKRIPT_MAX_PAGE_BYTES . ' bytes)', $node);
 		}
 
-		$this->writePage($this->page($key, $node), self::wrap($text), $node);
+		$this->spendWrite($node);
+		$this->store()->set($key, $text);
 		return TRUE;
 	}
 
-	/** Removing a key deletes its page, the way PukiWiki deletes any page. */
+	/** Removing a key deletes what held it, the way the store deletes anything. */
 	private function remove($key, $node) {
 		$refusal = $this->refusal($key);
 		if ($refusal !== '')
 			$this->rt->fail($refusal, $node);
 
-		$page = $this->page($key, $node);
-		if (!is_page($page))
+		if (!$this->store()->has($key))
 			return FALSE;
 
-		$this->writePage($page, '', $node);
-		return TRUE;
+		$this->spendWrite($node);
+		return $this->store()->remove($key);
 	}
 
-	private function writePage($page, $text, $node) {
+	private function spendWrite($node) {
 		if (!$this->rt->budget()->spendWrite()) {
-			$this->rt->failLimit('ページ書き込みの回数が上限を超えました (上限 ' .
+			$this->rt->failLimit('Too many page writes (limit ' .
 				PKRIPT_MAX_WRITES . ')', $node);
 		}
-		if (!function_exists('page_write'))
-			$this->rt->fail('この環境ではページを書き込めません', $node);
-
-		page_write($page, $text);
 	}
 
 	/** JSON is the storage format, so the JSON module is where it is done. */

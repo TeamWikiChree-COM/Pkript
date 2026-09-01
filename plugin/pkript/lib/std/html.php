@@ -1,5 +1,5 @@
 <?php
-// $Id: html.php,v 0.3 2026/08/31 18:20:16 WikiChree.COM Team Exp $
+// $Id: html.php,v 0.4 2026/09/01 22:34:53 WikiChree.COM Team Exp $
 
 /**
  * Pkript runtime - html namespace
@@ -35,7 +35,7 @@ class Pkript_Std_Url extends Pkript_Std_Module {
 				// Decoding can produce bytes that are not UTF-8, and those
 				// would send the whole output down the sanitizer's
 				// escape-everything path. Same rule as wiki.decode().
-				if (!mb_check_encoding($text, SOURCE_ENCODING))
+				if (!mb_check_encoding($text, PKRIPT_ENCODING))
 					return '';
 				return $this->rt->checkString($text, $node);
 		}
@@ -53,7 +53,7 @@ class Pkript_Std_Html extends Pkript_Std_Module {
 			case 'escape':
 				// ENT_QUOTES: PukiWiki's htmlsc() defaults to ENT_COMPAT,
 				// which leaves ' alone
-				return htmlsc($s, ENT_QUOTES);
+				return pkript_htmlsc($s, ENT_QUOTES);
 			case 'br':
 				return nl2br($s, TRUE);
 			case 'strip':

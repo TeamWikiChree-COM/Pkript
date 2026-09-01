@@ -1,5 +1,5 @@
 <?php
-// $Id: parser.php,v 0.3 2026/08/31 18:20:16 WikiChree.COM Team Exp $
+// $Id: parser.php,v 0.4 2026/09/01 22:34:53 WikiChree.COM Team Exp $
 
 /**
  * Pkript runtime - parser
@@ -13,6 +13,16 @@
 // Parser
 
 class Pkript_Parser {
+	/**
+	 * What a top level statement is refused with. Named because #pks reads
+	 * it: this one message, and no other the parser can give, is what tells
+	 * inline source apart from a whole script. See plugin_pks_compile().
+	 */
+	const NOT_A_SCRIPT = 'function or a variable declaration is required';
+
+	/** Declarations but no function. #pks reads this as a body too. */
+	const NO_FUNCTION = 'No function is defined';
+
 	private $tokens;
 	private $pos = 0;
 	private $script;
@@ -81,7 +91,7 @@ class Pkript_Parser {
 			}
 		}
 		if (empty($functions) && empty($this->imports)) {
-			throw new Pkript_Error('関数が定義されていません', $this->script);
+			throw new Pkript_Error(self::NO_FUNCTION, $this->script);
 		}
 		return $functions;
 	}
@@ -94,7 +104,8 @@ class Pkript_Parser {
 	/** Functions and constants share one namespace within a script. */
 	private function claim($functions, $name, $node) {
 		if (isset($functions[$name]) || isset($this->constants[$name])) {
-			$this->error($name . ' が二重に定義されています', $node);
+			$this->error("Identifier '" . $name .
+				"' has already been declared", $node);
 		}
 	}
 
@@ -169,8 +180,8 @@ class Pkript_Parser {
 			return $this->next();
 		$t = $this->peek();
 		$want = $value === NULL ? $type : "'" . $value . "'";
-		$got = $t['type'] === 'eof' ? 'ファイル終端' : "'" . $t['value'] . "'";
-		$this->error($want . ' が必要ですが ' . $got . ' がありました', $t);
+		$got = $t['type'] === 'eof' ? 'end of file' : "'" . $t['value'] . "'";
+		$this->error($want . ' expected but found ' . $got . '', $t);
 	}
 
 	private function error($message, $token = NULL) {
@@ -211,7 +222,7 @@ class Pkript_Parser {
 	private function parseTopLevelDecl() {
 		if (!$this->check('keyword', 'const') && !$this->check('keyword', 'let') &&
 			!$this->check('keyword', 'var')) {
-			$this->error('function か変数宣言が必要です');
+			$this->error(self::NOT_A_SCRIPT);
 		}
 		// parseVarDecl() already refuses a const without a value
 		return $this->parseVarDecl();
@@ -222,7 +233,7 @@ class Pkript_Parser {
 		$stmts = array();
 		while (!$this->check('op', '}')) {
 			if ($this->isEof()) {
-				$this->error('{ が閉じられていません', $open);
+				$this->error('{ is not closed', $open);
 			}
 			$stmts[] = $this->parseStatement();
 		}
@@ -260,7 +271,7 @@ class Pkript_Parser {
 		if ($this->check('keyword', 'continue'))
 			return $this->parseBreakOrContinue('Continue');
 		if ($this->check('keyword', 'function')) {
-			$this->error('関数はトップレベルにのみ定義できます');
+			$this->error('A function may only be declared at the top level');
 		}
 		if ($this->accept('op', ';')) {
 			return array('type' => 'Empty', 'line' => 0, 'col' => 0);
@@ -275,7 +286,7 @@ class Pkript_Parser {
 		if ($this->accept('op', '=')) {
 			$init = $this->parseExpression();
 		} elseif ($kw['value'] === 'const') {
-			$this->error('const は初期値が必要です', $kw);
+			$this->error('const requires an initial value', $kw);
 		}
 		if ($withSemicolon)
 			$this->endStatement();
@@ -312,9 +323,9 @@ class Pkript_Parser {
 			$token = $this->next();
 			$label = $token['value'];
 			if (!isset($this->labels[$label]))
-				$this->error('ラベル ' . $label . ' がありません', $token);
+				$this->error("Undefined label '" . $label . "'", $token);
 			if ($type === 'Continue' && !$this->labels[$label]) {
-				$this->error('continue のラベルはループに付いている必要があります',
+				$this->error('A continue label must name a loop',
 					$token);
 			}
 		}
@@ -342,7 +353,8 @@ class Pkript_Parser {
 		$this->expect('op', ':');
 
 		if (isset($this->labels[$name]))
-			$this->error('ラベル ' . $name . ' が二重に定義されています', $token);
+			$this->error("Label '" . $name . "' has already been declared",
+				$token);
 
 		static $loops = array('While' => 1, 'DoWhile' => 1, 'For' => 1,
 			'ForIn' => 1, 'ForOf' => 1);
@@ -444,12 +456,12 @@ class Pkript_Parser {
 		$seenDefault = FALSE;
 		while (!$this->check('op', '}')) {
 			if ($this->isEof()) {
-				$this->error('switch が閉じられていません', $open);
+				$this->error('switch is not closed', $open);
 			}
 
 			if ($this->accept('keyword', 'default')) {
 				if ($seenDefault) {
-					$this->error('default は1つしか書けません');
+					$this->error('Only one default is allowed');
 				}
 				$seenDefault = TRUE;
 				$test = NULL;
@@ -544,7 +556,7 @@ class Pkript_Parser {
 		$curr = $this->peek();
 		if ($prev !== NULL && $curr !== NULL && $curr['line'] > $prev['line'])
 			return;
-		$this->error("';' が必要です");
+		$this->error("Unexpected token, expected ';'");
 	}
 
 	/////////////////////////////////////////////
@@ -564,7 +576,7 @@ class Pkript_Parser {
 				$left['type'] !== 'Identifier' &&
 				$left['type'] !== 'Member' && $left['type'] !== 'Index'
 			) {
-				$this->error('代入できない式です', $op);
+				$this->error('Invalid assignment target', $op);
 			}
 			$value = $this->parseAssignment();
 			return array(
@@ -739,8 +751,8 @@ class Pkript_Parser {
 			return array('type' => 'Identifier', 'name' => $t['value']) + self::at($t);
 		}
 
-		$got = $t['type'] === 'eof' ? 'ファイル終端' : "'" . $t['value'] . "'";
-		$this->error('式が必要ですが ' . $got . ' がありました', $t);
+		$got = $t['type'] === 'eof' ? 'end of file' : "'" . $t['value'] . "'";
+		$this->error('Unexpected token, expected an expression but found ' . $got . '', $t);
 	}
 
 	/** Is an arrow function starting here? `x => ...` or `(a, b) => ...` */
@@ -849,7 +861,7 @@ class Pkript_Parser {
 	public function parseSingleExpression($what = '${}') {
 		$expr = $this->parseExpression();
 		if (!$this->isEof()) {
-			$this->error($what . ' の中に余分な字句があります');
+			$this->error($what . ' has trailing tokens');
 		}
 		return $expr;
 	}
@@ -929,7 +941,7 @@ class Pkript_Parser {
 
 	private function parseJsxExpression($part) {
 		$inner = new Pkript_Parser($part['tokens'], $this->script);
-		return $inner->parseSingleExpression('JSXの {}');
+		return $inner->parseSingleExpression('JSX {}');
 	}
 
 	/**
@@ -964,7 +976,7 @@ class Pkript_Parser {
 					$this->next();
 					$key = Pkript_Interpreter::toStringValue($k['value']);
 				} else {
-					$this->error('プロパティ名が必要です', $k);
+					$this->error('A property name is required', $k);
 				}
 
 				$this->expect('op', ':');

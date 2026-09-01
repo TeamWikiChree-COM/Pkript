@@ -1,5 +1,5 @@
 <?php
-// $Id: module.php,v 0.3 2026/08/31 18:20:16 WikiChree.COM Team Exp $
+// $Id: module.php,v 0.4 2026/09/01 22:34:53 WikiChree.COM Team Exp $
 
 /**
  * Pkript runtime - standard library base classes
@@ -48,7 +48,7 @@ abstract class Pkript_Std_Base {
 	 */
 	protected function spendRead($node) {
 		if (!$this->rt->budget()->spendRead()) {
-			$this->rt->failLimit('ページ参照の回数が上限を超えました (上限 ' .
+			$this->rt->failLimit('Too many page reads (limit ' .
 				PKRIPT_MAX_READS . ')', $node);
 		}
 	}
@@ -97,6 +97,16 @@ abstract class Pkript_Std_Module extends Pkript_Std_Base {
 	 * @return array member names, e.g. array('floor', 'ceil')
 	 */
 	abstract public static function members();
+
+	/**
+	 * Values the namespace publishes alongside its functions, e.g. Math.PI.
+	 * A module with none - most of them - inherits this empty list.
+	 *
+	 * @return array member name -> value
+	 */
+	public static function constants() {
+		return array();
+	}
 
 	/** @param string $name one of members() */
 	abstract public function call($name, $args, $node);

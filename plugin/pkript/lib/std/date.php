@@ -1,5 +1,5 @@
 <?php
-// $Id: date.php,v 0.3 2026/08/31 18:20:16 WikiChree.COM Team Exp $
+// $Id: date.php,v 0.4 2026/09/01 22:34:53 WikiChree.COM Team Exp $
 
 /**
  * Pkript runtime - date namespace
@@ -41,13 +41,11 @@ class Pkript_Std_Date extends Pkript_Std_Module {
 	 * three agree with each other and with PukiWiki's own timestamps.
 	 */
 	public static function now() {
-		if (defined('UTIME'))
-			return UTIME;
-		return time() - (defined('LOCALZONE') ? LOCALZONE : 0);
+		return pkript_now();
 	}
 
 	private static function zoneTime() {
-		return defined('ZONETIME') ? ZONETIME : 0;
+		return pkript_zone_offset();
 	}
 
 	/**
@@ -65,18 +63,14 @@ class Pkript_Std_Date extends Pkript_Std_Module {
 		$format = Pkript_Interpreter::stripHtmlMarks(
 			Pkript_Interpreter::toStringValue($format));
 		if (strlen($format) > self::MAX_FORMAT) {
-			$this->rt->fail('日付の書式が長すぎます (上限 ' .
-				self::MAX_FORMAT . 'バイト)', $node);
+			$this->rt->fail('Date format too long (limit ' .
+				self::MAX_FORMAT . ' bytes)', $node);
 		}
 		return self::expand($format, $time + self::zoneTime());
 	}
 
 	private static function defaultFormat($time, $paren) {
-		if (function_exists('format_date'))
-			return format_date($time, $paren);
-
-		$text = date('Y-m-d H:i:s', $time + self::zoneTime());
-		return $paren ? '(' . $text . ')' : $text;
+		return pkript_format_date($time, $paren);
 	}
 
 	private static function expand($format, $time) {

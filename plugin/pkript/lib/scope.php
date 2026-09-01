@@ -1,5 +1,5 @@
 <?php
-// $Id: scope.php,v 0.3 2026/08/31 18:20:16 WikiChree.COM Team Exp $
+// $Id: scope.php,v 0.4 2026/09/01 22:34:53 WikiChree.COM Team Exp $
 
 /**
  * Pkript runtime - scopes and signals

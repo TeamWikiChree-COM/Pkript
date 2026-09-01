@@ -1,5 +1,5 @@
 <?php
-// $Id: string_methods.php,v 0.3 2026/08/31 18:20:16 WikiChree.COM Team Exp $
+// $Id: string_methods.php,v 0.4 2026/09/01 22:34:53 WikiChree.COM Team Exp $
 
 /**
  * Pkript runtime - String methods
@@ -22,12 +22,14 @@ class Pkript_Std_StringMethods extends Pkript_Std_Methods {
 			'replace', 'replaceAll', 'split', 'substring', 'slice',
 			'charAt', 'at', 'padStart', 'padEnd', 'repeat',
 			'match', 'matchAll', 'search',
+			'concat', 'charCodeAt', 'codePointAt', 'localeCompare',
+			'toString', 'valueOf',
 			'spanWhile', 'spanUntil',
 		);
 	}
 
 	public function call($s, $name, $args, $node) {
-		$enc = SOURCE_ENCODING;
+		$enc = PKRIPT_ENCODING;
 		switch ($name) {
 			case 'toUpperCase':
 				return mb_strtoupper($s, $enc);
@@ -100,6 +102,32 @@ class Pkript_Std_StringMethods extends Pkript_Std_Methods {
 			case 'repeat':
 				return $this->repeat($s, $args, $node);
 
+			case 'concat':
+				foreach ($args as $a)
+					$s .= Pkript_Interpreter::toStringValue($a);
+				return $this->rt->checkString($s, $node);
+
+			case 'charCodeAt':
+			case 'codePointAt':
+				// One code point either way: the runtime keeps text as UTF-8
+				// and has no UTF-16 halves to hand back separately
+				$i = (int) $this->numArg($args, 0, $node, 0);
+				if ($i < 0 || $i >= mb_strlen($s, $enc))
+					return NAN;
+				$points = array_values(unpack('N*',
+					mb_convert_encoding(mb_substr($s, $i, 1, $enc), 'UCS-4BE', $enc)));
+				return $points[0];
+
+			case 'localeCompare':
+				// Byte order, as everything else here compares: PHP has no
+				// collation to offer that does not depend on the server's locale
+				$other = $this->strArg($args, 0);
+				return $s < $other ? -1 : ($s > $other ? 1 : 0);
+
+			case 'toString':
+			case 'valueOf':
+				return $s;
+
 			case 'spanWhile':
 			case 'spanUntil':
 				return $this->span($s, $name === 'spanWhile', $args, $node);
@@ -107,7 +135,7 @@ class Pkript_Std_StringMethods extends Pkript_Std_Methods {
 	}
 
 	private function indexOf($s, $args, $node) {
-		$enc = SOURCE_ENCODING;
+		$enc = PKRIPT_ENCODING;
 		$len = mb_strlen($s, $enc);
 		$from = (int) $this->numArg($args, 1, $node, 0);
 		$from = max(0, min($from, $len));
@@ -155,7 +183,7 @@ class Pkript_Std_StringMethods extends Pkript_Std_Methods {
 
 	/** @param bool $fromEnd `at`, where -1 is the last character as in JS */
 	private function charAt($s, $fromEnd, $args, $node) {
-		$enc = SOURCE_ENCODING;
+		$enc = PKRIPT_ENCODING;
 		$len = mb_strlen($s, $enc);
 		$i = (int) $this->numArg($args, 0, $node, 0);
 		if ($fromEnd && $i < 0)
@@ -168,7 +196,7 @@ class Pkript_Std_StringMethods extends Pkript_Std_Methods {
 	private function repeat($s, $args, $node) {
 		$n = (int) $this->numArg($args, 0, $node, 0);
 		if ($n < 0)
-			$this->rt->fail('repeat の回数が負の数です', $node);
+			$this->rt->fail('repeat count is negative', $node);
 		// Checked before str_repeat() so the big string is never built
 		if ($n > 0 && strlen($s) * $n > PKRIPT_MAX_STRING)
 			$this->rt->failStringTooLong($node);
@@ -181,7 +209,7 @@ class Pkript_Std_StringMethods extends Pkript_Std_Methods {
 	 * back unchanged; padding is never truncation.
 	 */
 	private function pad($s, $atStart, $args, $node) {
-		$enc = SOURCE_ENCODING;
+		$enc = PKRIPT_ENCODING;
 		$target = (int) $this->numArg($args, 0, $node, 0);
 		$pad = $this->strArg($args, 1, ' ');
 		$len = mb_strlen($s, $enc);
@@ -205,7 +233,7 @@ class Pkript_Std_StringMethods extends Pkript_Std_Methods {
 	 * Replaces a scanner's inner loop, which costs 50-60 steps per character.
 	 */
 	private function span($s, $inSet, $args, $node) {
-		$enc = SOURCE_ENCODING;
+		$enc = PKRIPT_ENCODING;
 		$from = max(0, (int) $this->numArg($args, 0, $node, 0));
 		$set = $this->strArg($args, 1);
 		$len = mb_strlen($s, $enc);

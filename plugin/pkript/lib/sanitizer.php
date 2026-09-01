@@ -1,5 +1,5 @@
 <?php
-// $Id: sanitizer.php,v 0.3 2026/08/31 18:20:16 WikiChree.COM Team Exp $
+// $Id: sanitizer.php,v 0.4 2026/09/01 22:34:53 WikiChree.COM Team Exp $
 
 /**
  * Pkript runtime - HTML sanitizer
@@ -326,7 +326,7 @@ class Pkript_Sanitizer {
 
 		// Without the DOM extension we cannot parse reliably, so escape everything.
 		if (!extension_loaded('dom'))
-			return htmlsc($html);
+			return pkript_htmlsc($html);
 
 		$doc = new DOMDocument();
 		$prev = libxml_use_internal_errors(TRUE);
@@ -336,7 +336,7 @@ class Pkript_Sanitizer {
 		libxml_use_internal_errors($prev);
 
 		if (!$ok)
-			return htmlsc($html);
+			return pkript_htmlsc($html);
 
 		$root = $doc->getElementById('pkript-root');
 		if ($root === NULL) {
@@ -349,7 +349,7 @@ class Pkript_Sanitizer {
 			}
 		}
 		if ($root === NULL)
-			return htmlsc($html);
+			return pkript_htmlsc($html);
 
 		self::cleanNode($root);
 		if (!empty($fragments))
@@ -581,13 +581,9 @@ class Pkript_Sanitizer {
 		}
 	}
 
-	/** This wiki's own entry point, for a form with no action of its own. */
+	/** Where a form with no action of its own should post back to. */
 	private static function selfUri() {
-		if (function_exists('get_base_uri'))
-			return get_base_uri();
-		if (function_exists('get_script_uri'))
-			return get_script_uri();
-		return './';
+		return pkript_self_uri();
 	}
 
 	/** @return string|NULL the URL, or NULL when it must be dropped */

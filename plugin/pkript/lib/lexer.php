@@ -1,5 +1,5 @@
 <?php
-// $Id: lexer.php,v 0.3 2026/08/31 18:20:16 WikiChree.COM Team Exp $
+// $Id: lexer.php,v 0.4 2026/09/01 22:34:53 WikiChree.COM Team Exp $
 
 /**
  * Pkript runtime - lexer
@@ -150,7 +150,7 @@ class Pkript_Lexer {
 			$op = $this->readOperator();
 			if ($op === NULL) {
 				throw new Pkript_Error(
-					'不正な文字 ' . $this->describeChar($ch),
+					'Invalid character ' . $this->describeChar($ch),
 					$this->script,
 					$line,
 					$col
@@ -216,7 +216,7 @@ class Pkript_Lexer {
 				$end = strpos($this->src, '*/', $this->pos + 2);
 				if ($end === FALSE) {
 					throw new Pkript_Error(
-						'コメントが閉じられていません',
+						'Unterminated comment',
 						$this->script,
 						$this->line,
 						$this->col
@@ -240,7 +240,7 @@ class Pkript_Lexer {
 		while (TRUE) {
 			if ($this->pos >= $this->len) {
 				throw new Pkript_Error(
-					'文字列が閉じられていません',
+					'Unterminated string',
 					$this->script,
 					$line,
 					$col
@@ -257,7 +257,7 @@ class Pkript_Lexer {
 			$ch = $this->src[$this->pos];
 			if ($ch === "\n") {
 				throw new Pkript_Error(
-					'文字列内で改行はできません',
+					'A string may not contain a newline',
 					$this->script,
 					$this->line,
 					$this->col
@@ -298,7 +298,7 @@ class Pkript_Lexer {
 		$esc = $this->src[$this->pos];
 		if (!isset($simple[$esc])) {
 			throw new Pkript_Error(
-				'不明なエスケープ \\' . $esc,
+				'Invalid escape \\' . $esc,
 				$this->script,
 				$this->line,
 				$this->col
@@ -325,7 +325,7 @@ class Pkript_Lexer {
 		while (TRUE) {
 			if ($this->pos >= $this->len) {
 				throw new Pkript_Error(
-					'テンプレートが閉じられていません',
+					'Unterminated template literal',
 					$this->script,
 					$openLine,
 					$openCol
@@ -386,7 +386,7 @@ class Pkript_Lexer {
 		$this->advance();    // closing brace
 
 		if (trim($source) === '') {
-			throw new Pkript_Error('${} の中が空です', $this->script, $line, $col);
+			throw new Pkript_Error('Empty ${} in a template literal', $this->script, $line, $col);
 		}
 
 		$inner = new Pkript_Lexer($source, $this->script, $line, $col);
@@ -428,7 +428,7 @@ class Pkript_Lexer {
 			$i++;
 		}
 		throw new Pkript_Error(
-			$what . ' が閉じられていません',
+			$what . ' is not closed',
 			$this->script,
 			$this->line,
 			$this->col
@@ -472,7 +472,7 @@ class Pkript_Lexer {
 	 */
 	private function readNumber() {
 		if (!preg_match(self::NUMBER_RE, $this->src, $m, 0, $this->pos)) {
-			throw new Pkript_Error('数値リテラルが不正です',
+			throw new Pkript_Error('Invalid number literal',
 				$this->script, $this->line, $this->col);
 		}
 
@@ -484,8 +484,8 @@ class Pkript_Lexer {
 		if ($this->pos < $this->len &&
 			strpos(self::IDENT_CHARS, $this->src[$this->pos]) !== FALSE) {
 			throw new Pkript_Error(
-				'数値リテラルの直後に ' . $this->describeChar($this->src[$this->pos]) .
-				' は書けません',
+				'Unexpected ' . $this->describeChar($this->src[$this->pos]) .
+				' after a number literal',
 				$this->script, $this->line, $this->col);
 		}
 
@@ -595,7 +595,7 @@ class Pkript_Lexer {
 		if ($this->pos < $this->len && $this->src[$this->pos] !== '>') {
 			$tag = $this->readJsxName();
 			if ($tag === '')
-				$this->jsxError('タグ名が必要です');
+				$this->jsxError('A tag name is required');
 		}
 
 		$attrs = ($tag === '') ? array() : $this->readJsxAttributes($line, $col);
@@ -606,7 +606,7 @@ class Pkript_Lexer {
 			$void = TRUE;
 		}
 		if ($this->pos >= $this->len || $this->src[$this->pos] !== '>')
-			$this->jsxError('JSXタグの > がありません');
+			$this->jsxError('Missing > on a JSX tag');
 		$this->advance();
 
 		if (self::isVoidTag($tag))
@@ -629,7 +629,7 @@ class Pkript_Lexer {
 		while (TRUE) {
 			$this->skipJsxSpaces();
 			if ($this->pos >= $this->len) {
-				throw new Pkript_Error('JSXタグが閉じられていません',
+				throw new Pkript_Error('Unterminated JSX tag',
 					$this->script, $line, $col);
 			}
 
@@ -637,13 +637,13 @@ class Pkript_Lexer {
 			if ($ch === '>' || $ch === '/')
 				return $attrs;
 			if ($ch === '{')
-				$this->jsxError('スプレッド属性には対応していません');
+				$this->jsxError('Spread attributes are not supported');
 
 			$nameLine = $this->line;
 			$nameCol = $this->col;
 			$name = $this->readJsxAttrName();
 			if ($name === '')
-				$this->jsxError('属性名が必要です');
+				$this->jsxError('An attribute name is required');
 
 			$value = NULL;
 			$this->skipJsxSpaces();
@@ -664,7 +664,7 @@ class Pkript_Lexer {
 	/** A quoted string or a braced expression. */
 	private function readJsxAttrValue() {
 		if ($this->pos >= $this->len)
-			$this->jsxError('属性値がありません');
+			$this->jsxError('Missing attribute value');
 
 		$ch = $this->src[$this->pos];
 		if ($ch === '"' || $ch === "'")
@@ -672,10 +672,10 @@ class Pkript_Lexer {
 		if ($ch === '{') {
 			$expr = $this->readJsxExpression();
 			if ($expr === NULL)
-				$this->jsxError('属性の {} の中が空です');
+				$this->jsxError('Empty {} in an attribute');
 			return $expr;
 		}
-		$this->jsxError('属性値には文字列か {式} が必要です');
+		$this->jsxError('An attribute value must be a string or {expression}');
 	}
 
 	/**
@@ -689,7 +689,7 @@ class Pkript_Lexer {
 
 		$n = strcspn($this->src, $quote, $this->pos);
 		if ($this->pos + $n >= $this->len) {
-			throw new Pkript_Error('属性値が閉じられていません',
+			throw new Pkript_Error('Unterminated attribute value',
 				$this->script, $line, $col);
 		}
 		$text = substr($this->src, $this->pos, $n);
@@ -707,7 +707,7 @@ class Pkript_Lexer {
 		$text = '';
 		while (TRUE) {
 			if ($this->pos >= $this->len) {
-				throw new Pkript_Error('<' . $tag . '> が閉じられていません',
+				throw new Pkript_Error('<' . $tag . '> is not closed',
 					$this->script, $line, $col);
 			}
 
@@ -753,14 +753,14 @@ class Pkript_Lexer {
 
 		$this->skipJsxSpaces();
 		if ($this->pos >= $this->len || $this->src[$this->pos] !== '>') {
-			throw new Pkript_Error('閉じタグの > がありません',
+			throw new Pkript_Error('Missing > on a closing tag',
 				$this->script, $line, $col);
 		}
 		$this->advance();
 
 		if ($close !== $tag) {
 			throw new Pkript_Error(
-				'閉じタグ </' . $close . '> が <' . $tag . '> と一致しません',
+				'Closing tag </' . $close . '> does not match <' . $tag . '>',
 				$this->script, $line, $col);
 		}
 	}
@@ -865,14 +865,14 @@ class Pkript_Lexer {
 		$inClass = FALSE;   // '/' inside [...] is a literal slash, as in JS
 		while (TRUE) {
 			if ($this->pos >= $this->len || $this->src[$this->pos] === "\n") {
-				throw new Pkript_Error('正規表現が閉じられていません',
+				throw new Pkript_Error('Unterminated regular expression',
 					$this->script, $line, $col);
 			}
 
 			$ch = $this->src[$this->pos];
 			if ($ch === '\\') {
 				if ($this->pos + 1 >= $this->len || $this->src[$this->pos + 1] === "\n") {
-					throw new Pkript_Error('正規表現が閉じられていません',
+					throw new Pkript_Error('Unterminated regular expression',
 						$this->script, $line, $col);
 				}
 				$source .= substr($this->src, $this->pos, 2);
@@ -890,7 +890,7 @@ class Pkript_Lexer {
 		}
 
 		if ($source === '') {
-			throw new Pkript_Error('正規表現が空です', $this->script, $line, $col);
+			throw new Pkript_Error('Empty regular expression', $this->script, $line, $col);
 		}
 
 		// Flags run right up against the closing slash

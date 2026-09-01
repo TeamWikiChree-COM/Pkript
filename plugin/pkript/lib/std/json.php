@@ -1,5 +1,5 @@
 <?php
-// $Id: json.php,v 0.3 2026/08/31 18:20:16 WikiChree.COM Team Exp $
+// $Id: json.php,v 0.4 2026/09/01 22:34:53 WikiChree.COM Team Exp $
 
 /**
  * Pkript runtime - JSON namespace
@@ -49,7 +49,7 @@ class Pkript_Std_Json extends Pkript_Std_Module {
 
 		$out = json_encode($plain, $flags);
 		if ($out === FALSE)
-			$this->rt->fail('JSON に変換できません', $node);
+			$this->rt->fail('Cannot convert to JSON', $node);
 		if ($width > 0 && $width !== 4)
 			$out = self::reindent($out, $width);
 		return $this->rt->checkString($out, $node);
@@ -58,7 +58,7 @@ class Pkript_Std_Json extends Pkript_Std_Module {
 	/** A Pkript value as something json_encode() understands. */
 	private function encodeValue($value, $depth, $seen, $node) {
 		if ($depth > PKRIPT_MAX_DEPTH) {
-			$this->rt->fail('JSON の入れ子が深すぎます (上限 ' .
+			$this->rt->fail('JSON nesting too deep (limit ' .
 				PKRIPT_MAX_DEPTH . ')', $node);
 		}
 
@@ -72,7 +72,7 @@ class Pkript_Std_Json extends Pkript_Std_Module {
 		if ($value instanceof Pkript_Arr || $value instanceof Pkript_Obj) {
 			$id = spl_object_id($value);
 			if (isset($seen[$id]))
-				$this->rt->fail('JSON が循環しています', $node);
+				$this->rt->fail('JSON has a cycle', $node);
 			$seen[$id] = TRUE;
 
 			return $value instanceof Pkript_Arr
@@ -121,11 +121,11 @@ class Pkript_Std_Json extends Pkript_Std_Module {
 
 	public function parse($text, $node) {
 		if (trim($text) === '')
-			$this->rt->fail('JSON が空です', $node);
+			$this->rt->fail('JSON is empty', $node);
 
 		$data = json_decode($text, FALSE, min(PKRIPT_MAX_DEPTH, 512));
 		if ($data === NULL && strtolower(trim($text)) !== 'null')
-			$this->rt->fail('JSON として読めません', $node);
+			$this->rt->fail('Cannot parse as JSON', $node);
 
 		return $this->decodeValue($data, $node);
 	}

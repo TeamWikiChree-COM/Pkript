@@ -1,5 +1,5 @@
 <?php
-// $Id: stdlib.php,v 0.3 2026/08/31 18:20:16 WikiChree.COM Team Exp $
+// $Id: stdlib.php,v 0.4 2026/09/01 22:34:53 WikiChree.COM Team Exp $
 
 /**
  * Pkript runtime - standard library
@@ -21,6 +21,8 @@
 
 foreach (array(
 	'module',
+	'package',
+	'package_core',
 	'registry',
 
 	// One class per API namespace
@@ -31,8 +33,6 @@ foreach (array(
 	'object',
 	'lang',
 	'console',
-	'wiki',
-	'wiki_writer',
 	'data',
 
 	// One class per value type that has methods

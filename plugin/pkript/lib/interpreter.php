@@ -1,5 +1,5 @@
 <?php
-// $Id: interpreter.php,v 0.3 2026/08/31 18:20:16 WikiChree.COM Team Exp $
+// $Id: interpreter.php,v 0.4 2026/09/01 22:34:53 WikiChree.COM Team Exp $
 
 /**
  * Pkript runtime - interpreter core
@@ -39,30 +39,45 @@ class Pkript_Interpreter {
 	// See lib/std/registry.php.
 	private $stdlib;
 
+	/** @var Pkript_Env */
+	private $env;
+
 	// console.log lines, shown after the output when PKRIPT_DEBUG is on.
 	// Filled either way, so debug does not change how long a script runs.
 	private $logs = array();
 	private $logBytes = 0;
 
 
-	public function __construct($functions, $script, $trust = NULL, $constants = array()) {
+	/**
+	 * @param Pkript_Env $env what this run may reach outside itself. NULL for
+	 *                        the defaults, which work anywhere.
+	 */
+	public function __construct($functions, $script, $trust = NULL, $constants = array(), $env = NULL) {
 		$this->functions = $functions;
 		$this->script = $script;
-		$this->trust = $trust === NULL ? PKRIPT_TRUST_FILE : $trust;
+		$this->trust = $trust === NULL ? PKRIPT_TRUST_FULL : $trust;
+		$this->env = $env === NULL ? new Pkript_Env() : $env;
 		$this->budget = Pkript_Budget::current();
 		$this->constants = $constants;
 		$this->globals = new Pkript_Scope();
-		$this->stdlib = new Pkript_Stdlib($this);
+		$this->stdlib = new Pkript_Stdlib($this, $this->env->packages());
 
+		$constants = $this->stdlib->namespaceConstants();
 		foreach ($this->stdlib->namespaces() as $name => $members) {
 			$ns = new Pkript_Obj();
 			foreach ($members as $member) {
 				$ns->props[$member] = new Pkript_Builtin($name . '.' . $member);
 			}
+			foreach ($constants[$name] as $member => $value) {
+				$ns->props[$member] = $value;
+			}
 			$this->globals->declare_($name, $ns, TRUE);
 		}
 		foreach ($this->stdlib->globalFunctions() as $fn) {
 			$this->globals->declare_($fn, new Pkript_Builtin($fn), TRUE);
+		}
+		foreach ($this->stdlib->globalConstants() as $name => $value) {
+			$this->globals->declare_($name, $value, TRUE);
 		}
 	}
 
@@ -70,7 +85,7 @@ class Pkript_Interpreter {
 	public function callEntryPoint($name, $context) {
 		if (!isset($this->functions[$name])) {
 			throw new Pkript_Error(
-				'エントリポイント ' . $name . ' が見つかりません',
+				'Entry point ' . $name . ' was not found',
 				$this->script
 			);
 		}
@@ -130,6 +145,11 @@ class Pkript_Interpreter {
 		return $this->budget;
 	}
 
+	/** What this run may reach outside itself; see env.php. */
+	public function env() {
+		return $this->env;
+	}
+
 	/** Lowest trust level among the script and everything it imported. */
 	public function trust() {
 		return $this->trust;
@@ -152,7 +172,7 @@ class Pkript_Interpreter {
 	 */
 	public function addFragment($html, $node) {
 		if (count($this->fragments) >= PKRIPT_MAX_ARRAY) {
-			$this->fail('Wiki出力の断片が多すぎます (上限 ' .
+			$this->fail('Too many wiki output fragments (limit ' .
 				PKRIPT_MAX_ARRAY . ')', $node);
 		}
 		return Pkript_Sanitizer::addFragment($this->fragments, $html);
@@ -185,8 +205,8 @@ class Pkript_Interpreter {
 		if (count($this->logs) >= PKRIPT_MAX_LOG ||
 			$this->logBytes >= PKRIPT_MAX_LOG_BYTES) {
 			$this->logs[] = array('level' => 'warn',
-				'text' => 'ログはここまでです (上限 ' . PKRIPT_MAX_LOG . '件 / ' .
-					PKRIPT_MAX_LOG_BYTES . 'バイト)');
+				'text' => 'Log truncated (limit ' . PKRIPT_MAX_LOG . ' lines / ' .
+					PKRIPT_MAX_LOG_BYTES . ' bytes)');
 		}
 	}
 
@@ -201,7 +221,7 @@ class Pkript_Interpreter {
 		$steps = $this->budget->step();
 		if ($this->budget->overSteps()) {
 			$this->failLimit(
-				'実行ステップ数が上限を超えました (上限 ' . PKRIPT_MAX_STEPS . ')',
+				'Too many evaluation steps (limit ' . PKRIPT_MAX_STEPS . ')',
 				$node === NULL ? array() : $node
 			);
 		}
@@ -209,7 +229,7 @@ class Pkript_Interpreter {
 		if (($steps & 0x3FF) === 0) {
 			if ($this->budget->overTime()) {
 				$this->failLimit(
-					'実行時間が上限を超えました (上限 ' . PKRIPT_MAX_TIME . '秒)',
+					'Execution time exceeded (limit ' . PKRIPT_MAX_TIME . ' seconds)',
 					$node === NULL ? array() : $node
 				);
 			}
@@ -220,7 +240,7 @@ class Pkript_Interpreter {
 	/** Also called where big values are built: one step can allocate 1MB. */
 	private function checkMemory($node) {
 		if ($this->budget->overMemory()) {
-			$this->failLimit('メモリ使用量が上限を超えました (上限 ' .
+			$this->failLimit('Memory limit exceeded (limit ' .
 				(int) (PKRIPT_MAX_MEMORY / 1048576) . 'MB)', $node);
 		}
 	}
@@ -233,12 +253,12 @@ class Pkript_Interpreter {
 	}
 
 	public function failStringTooLong($node) {
-		$this->failLimit('文字列が長すぎます (上限 ' . PKRIPT_MAX_STRING . 'バイト)', $node);
+		$this->failLimit('String too long (limit ' . PKRIPT_MAX_STRING . ' bytes)', $node);
 	}
 
 	public function checkArray($items, $node) {
 		if (count($items) > PKRIPT_MAX_ARRAY) {
-			$this->failLimit('配列の要素数が上限を超えました (上限 ' . PKRIPT_MAX_ARRAY . ')', $node);
+			$this->failLimit('Too many array elements (limit ' . PKRIPT_MAX_ARRAY . ')', $node);
 		}
 		$this->checkMemory($node);
 		return $items;
@@ -250,7 +270,8 @@ class Pkript_Interpreter {
 	private function invoke($decl, $args, $closure = NULL) {
 		if ($this->depth >= PKRIPT_MAX_DEPTH) {
 			throw new Pkript_LimitError(
-				'関数呼び出しが深すぎます (上限 ' . PKRIPT_MAX_DEPTH . ')',
+				'Maximum call stack size exceeded (limit ' .
+					PKRIPT_MAX_DEPTH . ')',
 				$this->currentScript(),
 				$decl['line'],
 				$decl['col']
@@ -304,7 +325,8 @@ class Pkript_Interpreter {
 			case 'VarDecl':
 				$value = $stmt['init'] === NULL ? NULL : $this->eval_($stmt['init'], $scope);
 				if (!$scope->declare_($stmt['name'], $value, $stmt['kind'] === 'const')) {
-					$this->fail('変数 ' . $stmt['name'] . ' は既に宣言されています', $stmt);
+					$this->fail("Identifier '" . $stmt['name'] .
+						"' has already been declared", $stmt);
 				}
 				return;
 
@@ -365,7 +387,7 @@ class Pkript_Interpreter {
 			case 'Empty':
 				return;
 		}
-		$this->fail('未対応の文です: ' . $stmt['type'], $stmt);
+		$this->fail('Unsupported statement: ' . $stmt['type'], $stmt);
 	}
 
 	/**
@@ -407,7 +429,7 @@ class Pkript_Interpreter {
 
 	private function guardIterations($count, $stmt) {
 		if ($count > PKRIPT_MAX_LOOP) {
-			$this->failLimit('ループの繰り返しが上限を超えました (上限 ' . PKRIPT_MAX_LOOP . ')', $stmt);
+			$this->failLimit('Too many loop iterations (limit ' . PKRIPT_MAX_LOOP . ')', $stmt);
 		}
 	}
 
@@ -530,11 +552,11 @@ class Pkript_Interpreter {
 			foreach (array_keys($subject->items) as $i) $items[] = (string)$i;
 		} elseif (is_string($subject)) {
 			$items = array();
-			for ($i = 0, $n = mb_strlen($subject, SOURCE_ENCODING); $i < $n; $i++) {
+			for ($i = 0, $n = mb_strlen($subject, PKRIPT_ENCODING); $i < $n; $i++) {
 				$items[] = (string)$i;
 			}
 		} else {
-			$this->fail(self::typeName($subject) . ' は for..in で回せません', $stmt);
+			$this->fail(self::typeName($subject) . ' is not iterable with for..in', $stmt);
 			return;
 		}
 
@@ -547,9 +569,9 @@ class Pkript_Interpreter {
 		if ($subject instanceof Pkript_Arr) {
 			$items = $subject->items;
 		} elseif (is_string($subject)) {
-			$items = mb_str_split($subject, 1, SOURCE_ENCODING);
+			$items = mb_str_split($subject, 1, PKRIPT_ENCODING);
 		} else {
-			$this->fail(self::typeName($subject) . ' は for..of で回せません', $stmt);
+			$this->fail(self::typeName($subject) . ' is not iterable', $stmt);
 			return;
 		}
 
@@ -585,7 +607,7 @@ class Pkript_Interpreter {
 				if (isset($this->functions[$node['name']])) {
 					return new Pkript_Func($this->functions[$node['name']]);
 				}
-				$this->fail('未定義の変数 ' . $node['name'], $node);
+				$this->fail($node['name'] . ' is not defined', $node);
 
 			case 'Function':
 				return new Pkript_Func($node, $scope);
@@ -647,7 +669,7 @@ class Pkript_Interpreter {
 			case 'Call':
 				return $this->evalCall($node, $scope);
 		}
-		$this->fail('未対応の式です: ' . $node['type'], $node);
+		$this->fail('Unsupported expression: ' . $node['type'], $node);
 	}
 
 	private function evalAssign($node, $scope) {
@@ -675,7 +697,7 @@ class Pkript_Interpreter {
 			$target['type'] !== 'Identifier' &&
 			$target['type'] !== 'Member' && $target['type'] !== 'Index'
 		) {
-			$this->fail('++ / -- は変数にのみ使えます', $node);
+			$this->fail('++ / -- may only be applied to a variable', $node);
 		}
 
 		$old = $this->toNumber($this->eval_($target, $scope), $node);
@@ -689,7 +711,8 @@ class Pkript_Interpreter {
 		if ($target['type'] === 'Identifier') {
 			$res = $scope->set($target['name'], $value);
 			if ($res === 'const') {
-				$this->fail('const 変数 ' . $target['name'] . ' には再代入できません', $node);
+				$this->fail('Assignment to constant variable ' .
+					$target['name'], $node);
 			}
 			if ($res === FALSE) {
 				$scope->declare_($target['name'], $value, FALSE);
@@ -700,7 +723,7 @@ class Pkript_Interpreter {
 		if ($target['type'] === 'Member') {
 			$obj = $this->eval_($target['object'], $scope);
 			if (!($obj instanceof Pkript_Obj)) {
-				$this->fail(self::typeName($obj) . ' のプロパティには代入できません', $node);
+				$this->fail(self::typeName($obj) . ' has no properties to assign to', $node);
 			}
 			$obj->props[$target['property']] = $value;
 			return;
@@ -713,9 +736,9 @@ class Pkript_Interpreter {
 		if ($obj instanceof Pkript_Arr) {
 			$i = (int) $this->toNumber($index, $node);
 			if ($i < 0)
-				$this->fail('配列の添字が負の数です', $node);
+				$this->fail('Negative array index', $node);
 			if ($i >= PKRIPT_MAX_ARRAY) {
-				$this->failLimit('配列の要素数が上限を超えました (上限 ' . PKRIPT_MAX_ARRAY . ')', $node);
+				$this->failLimit('Too many array elements (limit ' . PKRIPT_MAX_ARRAY . ')', $node);
 			}
 			// Writing past the end fills the gap with null, as JS does
 			for ($n = count($obj->items); $n < $i; $n++)
@@ -727,7 +750,7 @@ class Pkript_Interpreter {
 			$obj->props[self::toStringValue($index)] = $value;
 			return;
 		}
-		$this->fail(self::typeName($obj) . ' には添字で代入できません', $node);
+		$this->fail(self::typeName($obj) . ' cannot be assigned to by index', $node);
 	}
 
 	private function evalUnary($node, $scope) {
@@ -740,7 +763,7 @@ class Pkript_Interpreter {
 			case '+':
 				return $this->toNumber($value, $node);
 		}
-		$this->fail('未対応の単項演算子 ' . $node['op'], $node);
+		$this->fail('Unsupported unary operator ' . $node['op'], $node);
 	}
 
 	private function evalBinary($node, $scope) {
@@ -779,13 +802,13 @@ class Pkript_Interpreter {
 			case '/':
 				$d = $this->toNumber($r, $node);
 				if ($d == 0)
-					$this->fail('0 で除算しました', $node);
+					$this->fail('Division by zero', $node);
 				return $this->toNumber($l, $node) / $d;
 
 			case '%':
 				$d = $this->toNumber($r, $node);
 				if ($d == 0)
-					$this->fail('0 で剰余を取りました', $node);
+					$this->fail('Modulo by zero', $node);
 				return fmod($this->toNumber($l, $node), $d);
 
 			case '==':
@@ -806,7 +829,7 @@ class Pkript_Interpreter {
 			case '>=':
 				return $this->compare($l, $r, $node) >= 0;
 		}
-		$this->fail('未対応の演算子 ' . $node['op'], $node);
+		$this->fail('Unsupported operator ' . $node['op'], $node);
 	}
 
 	private function evalMember($node, $scope) {
@@ -816,14 +839,15 @@ class Pkript_Interpreter {
 		if ($obj instanceof Pkript_Obj) {
 			if (array_key_exists($prop, $obj->props))
 				return $obj->props[$prop];
-			$this->fail('プロパティ ' . $prop . ' は存在しません', $node);
+			$this->fail("Cannot read property '" . $prop . "' of an object",
+				$node);
 		}
 		if ($obj instanceof Pkript_Arr) {
 			if ($prop === 'length')
 				return count($obj->items);
 		}
 		if (is_string($obj) && $prop === 'length')
-			return mb_strlen(self::stripHtmlMarks($obj), SOURCE_ENCODING);
+			return mb_strlen(self::stripHtmlMarks($obj), PKRIPT_ENCODING);
 
 		if ($this->stdlib->isMethod($obj, $prop)) {
 			// A string method works on the HTML a JSX value holds, not on the
@@ -831,7 +855,8 @@ class Pkript_Interpreter {
 			return new Pkript_Method(self::stripHtmlMarks($obj), $prop);
 		}
 
-		$this->fail(self::typeName($obj) . ' にプロパティ ' . $prop . ' はありません', $node);
+		$this->fail("Cannot read property '" . $prop . "' of " .
+			self::typeName($obj), $node);
 	}
 
 	private function evalIndex($node, $scope) {
@@ -850,11 +875,11 @@ class Pkript_Interpreter {
 		}
 		if (is_string($obj)) {
 			$i = (int) $this->toNumber($index, $node);
-			if ($i < 0 || $i >= mb_strlen($obj, SOURCE_ENCODING))
+			if ($i < 0 || $i >= mb_strlen($obj, PKRIPT_ENCODING))
 				return '';
-			return mb_substr($obj, $i, 1, SOURCE_ENCODING);
+			return mb_substr($obj, $i, 1, PKRIPT_ENCODING);
 		}
-		$this->fail(self::typeName($obj) . ' は添字アクセスできません', $node);
+		$this->fail(self::typeName($obj) . ' cannot be indexed', $node);
 	}
 
 	private function evalCall($node, $scope) {
@@ -877,7 +902,7 @@ class Pkript_Interpreter {
 			return $this->stdlib->callMethod(
 				$callee->receiver, $callee->name, $args, $node);
 		}
-		$this->fail(self::typeName($callee) . ' は関数ではありません', $node);
+		$this->fail(self::typeName($callee) . ' is not a function', $node);
 	}
 
 
@@ -1013,7 +1038,7 @@ class Pkript_Interpreter {
 				continue;
 			}
 			$out .= ' ' . $name . '="' .
-				htmlsc(self::stripHtmlMarks(self::toStringValue($value)),
+				pkript_htmlsc(self::stripHtmlMarks(self::toStringValue($value)),
 					ENT_QUOTES) . '"';
 		}
 		return $out;
@@ -1043,18 +1068,18 @@ class Pkript_Interpreter {
 	 */
 	private static function jsxText($s) {
 		if (strpos($s, self::HTML_OPEN) === FALSE)
-			return htmlsc($s, ENT_QUOTES);
+			return pkript_htmlsc($s, ENT_QUOTES);
 
 		$parts = explode(self::HTML_OPEN, $s);
-		$out = htmlsc(array_shift($parts), ENT_QUOTES);
+		$out = pkript_htmlsc(array_shift($parts), ENT_QUOTES);
 		foreach ($parts as $part) {
 			$close = strpos($part, self::HTML_CLOSE);
 			if ($close === FALSE) {
-				$out .= htmlsc($part, ENT_QUOTES);
+				$out .= pkript_htmlsc($part, ENT_QUOTES);
 				continue;
 			}
 			$out .= substr($part, 0, $close) .
-				htmlsc(substr($part, $close + 1), ENT_QUOTES);
+				pkript_htmlsc(substr($part, $close + 1), ENT_QUOTES);
 		}
 		return $out;
 	}
@@ -1072,6 +1097,12 @@ class Pkript_Interpreter {
 		if (is_int($v))
 			return (string) $v;
 		if (is_float($v)) {
+			// NaN and the infinities have no digits to print, and %F would
+			// spell them the C way ('nan', 'inf') rather than the JS way
+			if (is_nan($v))
+				return 'NaN';
+			if (!is_finite($v))
+				return $v > 0 ? 'Infinity' : '-Infinity';
 			if ($v == (int) $v && abs($v) < 1e15)
 				return (string) (int) $v;
 			return rtrim(rtrim(sprintf('%.10F', $v), '0'), '.');
@@ -1090,8 +1121,8 @@ class Pkript_Interpreter {
 				// `a = [a, a]` doubles the output for one step, outside tick()
 				$length += strlen($part) + 1;
 				if ($length > PKRIPT_MAX_STRING) {
-					throw new Pkript_Error('文字列が長すぎます (上限 ' .
-						PKRIPT_MAX_STRING . 'バイト)');
+					throw new Pkript_Error('String too long (limit ' .
+						PKRIPT_MAX_STRING . ' bytes)');
 				}
 				$parts[] = $part;
 			}
@@ -1110,7 +1141,7 @@ class Pkript_Interpreter {
 		if (is_string($v))
 			return $v !== '';
 		if (is_int($v) || is_float($v))
-			return $v != 0;
+			return $v != 0 && !(is_float($v) && is_nan($v));
 		return TRUE;
 	}
 
@@ -1135,11 +1166,11 @@ class Pkript_Interpreter {
 			if ($s === '')
 				return 0;
 			if (!is_numeric($s)) {
-				$this->fail('数値に変換できません: "' . $v . '"', $node);
+				$this->fail('Cannot convert to a number: "' . $v . '"', $node);
 			}
 			return $s + 0;
 		}
-		$this->fail(self::typeName($v) . ' は数値として使えません', $node);
+		$this->fail(self::typeName($v) . ' cannot be used as a number', $node);
 	}
 
 	/** `===`: arrays and objects compare by identity, like JS. */
