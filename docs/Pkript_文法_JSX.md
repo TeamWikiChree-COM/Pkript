@@ -118,7 +118,7 @@ JSXで書いたHTMLも、他の出力と同じようにサニタイザを通る�
 | &lt;p onclick="..."&gt; | onclick が削除 |
 | &lt;p id="a"&gt; | id="pkript-a" に変換 |
 | &lt;a href="javascript:..."&gt; | href が削除 |
-| &lt;p style="position: fixed"&gt; | style が削除 |
+| &lt;p style="position: fixed"&gt; | position の宣言のみ削除（他の値は使える） |
 | &lt;form&gt; | action が自Wikiに補完 |
 
 詳しくは [Pkript/設定/サニタイザ](Pkript_%E8%A8%AD%E5%AE%9A_%E3%82%B5%E3%83%8B%E3%82%BF%E3%82%A4%E3%82%B6.md) を参照。

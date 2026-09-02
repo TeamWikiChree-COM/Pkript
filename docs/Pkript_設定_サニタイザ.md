@@ -23,10 +23,31 @@
 | Flexbox | flex*, justify-*, align-*, order, gap, row-gap, column-gap |
 | Grid | grid-template-*, grid-auto-*, grid-area, grid-column, grid-row, place-* |
 | アニメーション | transition*, animation*, transform, transform-origin, will-change, filter |
+| 配置 | position, z-index, top, right, bottom, left, inset |
 
 ```text
 <div style="transform:rotate(3deg); transition:all 0.3s ease-in-out">
 ```
+
+#### 配置プロパティ
+
+position と z-index は使える。ただし次の2つの条件が付く。
+
+- ブロック出力（#pkript, #スクリプト名）のみ。インライン出力（&amp;pkript(...);）ではこれらの宣言は除去される
+- position の値は static / relative / absolute / sticky のみ。fixed は除去される
+
+ブロック出力は、配置を含むためのラッパー要素に包まれる。絶対配置した子はそのラッパーを基準に置かれ、z-index をいくら上げてもラッパーの外には出ない。ページ本文の段落の中に入るインライン出力には包むものがないため、配置プロパティは渡らない。
+
+```js
+function plugin_badge_convert(e) {
+    return <div style="position:relative">
+        <span style="position:absolute; top:0; right:0; z-index:2">NEW</span>
+        <p>{e.args[0]}</p>
+    </div>;
+}
+```
+
+長さの単位は px, em, rem, %, vw, vh などが使える。
 
 禁止されるプロパティと値:
 
