@@ -366,6 +366,16 @@ function plugin_pkript_block($type, $html, $class = 'pkript', $attrs = '') {
 	return '<div class="' . $class . '"' . $attrs . '>' . $html . '</div>';
 }
 
+// What the div around block output carries, and the reason `position` is safe
+// to allow in a script's styles at all. Set it to '' if your skin styles
+// .pkript itself - and if you do, take position and z-index out of
+// Pkript_Sanitizer::$allowedStyleProps, because then nothing is containing
+// them any more.
+if (!defined('PKRIPT_WRAPPER_STYLE')) {
+	define('PKRIPT_WRAPPER_STYLE',
+		' style="position:relative;isolation:isolate"');
+}
+
 /**
  * The wrapper for a run's output, containing it when it needs containing.
  *
