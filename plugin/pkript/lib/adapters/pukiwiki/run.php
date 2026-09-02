@@ -198,8 +198,9 @@ function plugin_pkript_run($args, $type, $body = '') {
 	}
 
 	$html = Pkript_Interpreter::toStringValue($result);
-	return plugin_pkript_block($type,
-			Pkript_Sanitizer::sanitize($html, $interp->getFragments())) .
+	return plugin_pkript_output($type,
+			Pkript_Sanitizer::sanitize($html, $interp->getFragments(),
+				$type !== 'inline')) .
 		plugin_pkript_logs($interp, $type);
 }
 
@@ -256,8 +257,9 @@ function plugin_pks_run($source, $args, $type, $trust = PKRIPT_TRUST_PAGE) {
 	}
 
 	$html = Pkript_Interpreter::toStringValue($result);
-	return plugin_pkript_block($type,
-			Pkript_Sanitizer::sanitize($html, $interp->getFragments())) .
+	return plugin_pkript_output($type,
+			Pkript_Sanitizer::sanitize($html, $interp->getFragments(),
+				$type !== 'inline')) .
 		plugin_pkript_logs($interp, $type);
 }
 
@@ -358,10 +360,26 @@ function plugin_pkript_logs($interp, $type = 'inline') {
  * together on one line. A block call is a block, and says so. An inline one
  * sits inside a paragraph and must not break out of it.
  */
-function plugin_pkript_block($type, $html, $class = 'pkript') {
+function plugin_pkript_block($type, $html, $class = 'pkript', $attrs = '') {
 	if ($type === 'inline' || $html === '')
 		return $html;
-	return '<div class="' . $class . '">' . $html . '</div>';
+	return '<div class="' . $class . '"' . $attrs . '>' . $html . '</div>';
+}
+
+/**
+ * The wrapper for a run's output, containing it when it needs containing.
+ *
+ * `position` is only safe to allow inside the wrapper because the wrapper is
+ * the containing block anything absolutely placed resolves against, and a
+ * stacking context of its own - so no z-index a script writes can paint over
+ * the wiki around it. That style is added only when the script actually
+ * placed something, so output that did not is wrapped exactly as before.
+ * Written here rather than in a stylesheet because the plugin ships no CSS
+ * and must not depend on the skin having any.
+ */
+function plugin_pkript_output($type, $html) {
+	return plugin_pkript_block($type, $html, 'pkript',
+		Pkript_Sanitizer::placedSomething() ? PKRIPT_WRAPPER_STYLE : '');
 }
 
 /**

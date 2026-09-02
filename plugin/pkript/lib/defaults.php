@@ -65,6 +65,21 @@ if (!defined('PKRIPT_MAX_REGEX'))
 	define('PKRIPT_MAX_REGEX', 512);
 
 /////////////////////////////////////////////////
+// Output
+//
+// What the wrapper around block output carries. It is what makes `position`
+// safe to allow in a script's styles: the wrapper is the containing block
+// anything absolutely placed inside it resolves against, and a stacking
+// context of its own, so a z-index written by a script cannot paint over the
+// page around it. Set it to '' to drop the attribute, and take position and
+// z-index out of the sanitizer's allowlist if you do.
+
+if (!defined('PKRIPT_WRAPPER_STYLE')) {
+	define('PKRIPT_WRAPPER_STYLE',
+		' style="position:relative;isolation:isolate"');
+}
+
+/////////////////////////////////////////////////
 // Stored data
 
 if (!defined('PKRIPT_ALLOW_DATA'))

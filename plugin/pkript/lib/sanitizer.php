@@ -125,10 +125,10 @@ class Pkript_Sanitizer {
 		'date',
 	);
 
-	// Presentation only. Anything that can move an element out of the flow of
-	// the page and put it over the wiki's own chrome - position, z-index,
-	// float to the viewport, background-image - stays out: a script may make
-	// its own output look like anything, but not make it look like the site.
+	// Presentation only: a script may make its own output look like anything,
+	// but not make it look like the site. background-image stays out because
+	// it fetches, and 'position: fixed' because it is the one value nothing
+	// on the page can contain - see isValidStyleValue().
 	private static $allowedStyleProps = array(
 		'color',
 		'background-color',
@@ -175,6 +175,19 @@ class Pkript_Sanitizer {
 		'visibility',
 		'clear',
 		'float',
+
+		// Placement. These are only safe because block output is wrapped in
+		// an element that is positioned and isolated, so an absolutely placed
+		// child is placed against that wrapper and no z-index can paint above
+		// it - see plugin_pkript_block(). Inline output has no wrapper to
+		// contain it, so it does not get these at all; see $positionProps.
+		'position',
+		'z-index',
+		'top',
+		'right',
+		'bottom',
+		'left',
+		'inset',
 
 		// Text
 		'letter-spacing',
@@ -304,6 +317,17 @@ class Pkript_Sanitizer {
 	const FRAGMENT_SUFFIX = '@@';
 
 	/**
+	 * Did the last sanitize() keep a property that places something?
+	 *
+	 * The wrapper only has to contain the output when it does, so output that
+	 * positions nothing is wrapped exactly as it was before positioning was
+	 * allowed at all.
+	 */
+	public static function placedSomething() {
+		return self::$placed;
+	}
+
+	/**
 	 * Park trusted HTML and return the token that stands in for it.
 	 * @param array $fragments passed by reference; the caller owns the table
 	 */
@@ -316,8 +340,16 @@ class Pkript_Sanitizer {
 	/**
 	 * @param string $html      the script's return value
 	 * @param array  $fragments trusted HTML from wiki.convert(), by index
+	 * @param bool   $contained is this output going inside a wrapper that
+	 *                          positions and isolates it? Block output is;
+	 *                          inline output sits in the page's own paragraph
+	 *                          with nothing around it, and so may not place
+	 *                          anything. See plugin_pkript_block().
 	 */
-	public static function sanitize($html, $fragments = array()) {
+	public static function sanitize($html, $fragments = array(), $contained = TRUE) {
+		self::$contained = $contained;
+		self::$placed = FALSE;
+
 		// JSX marks which runs of a string are HTML already. They have done
 		// their work by now, and are not meant to reach the page.
 		$html = Pkript_Interpreter::stripHtmlMarks($html);
@@ -655,9 +687,37 @@ class Pkript_Sanitizer {
 		return implode('; ', $out);
 	}
 
+	/**
+	 * The properties that only work because something contains them. Output
+	 * that is not wrapped - an inline call, which sits inside the page's own
+	 * paragraph - is not contained by anything, so it does not get them.
+	 */
+	private static $positionProps = array(
+		'position', 'z-index', 'top', 'right', 'bottom', 'left', 'inset',
+	);
+
+	// Set while a run's output is being cleaned; see sanitize().
+	private static $contained = TRUE;
+
+	// Did the output that was just cleaned place anything? Only then does the
+	// wrapper need to carry the style that contains it, so a page whose
+	// scripts do not position anything keeps the markup it always had.
+	private static $placed = FALSE;
+
 	private static function isValidStyleValue($prop, $value) {
 		if ($prop === 'display') {
 			return in_array(strtolower($value), self::$allowedDisplay, TRUE);
+		}
+		if (in_array($prop, self::$positionProps, TRUE)) {
+			if (!self::$contained)
+				return FALSE;
+			self::$placed = TRUE;
+			// 'fixed' is placed against the window, which no ancestor short
+			// of a clipping one can contain - so it is the one value out
+			if ($prop === 'position') {
+				return in_array(strtolower($value),
+					array('static', 'relative', 'absolute', 'sticky'), TRUE);
+			}
 		}
 		if ($prop === 'opacity') {
 			return preg_match('/^(0|1|0?\.[0-9]{1,3})$/', $value) === 1;
@@ -798,11 +858,14 @@ class Pkript_Sanitizer {
 		return FALSE;
 	}
 
-	// Lengths, angles, times and the grid's fraction. No viewport units: a
-	// script sizing itself against the window is how an overlay is built.
+	// Lengths, angles, times and the grid's fraction. Viewport units are in:
+	// they size an element against the window, which is what a responsive
+	// layout wants, and sizing alone cannot lift anything over the page - the
+	// wrapper sees to that.
 	private static function isLength($value) {
 		if (!preg_match('/^[+-]?\d{0,6}(\.\d{1,4})?' .
-				'(px|em|rem|ex|ch|%|pt|pc|cm|mm|in|fr|deg|grad|rad|turn|ms|s)?$/i',
+				'(px|em|rem|ex|ch|%|pt|pc|cm|mm|in|fr|vw|vh|vmin|vmax' .
+				'|deg|grad|rad|turn|ms|s)?$/i',
 				$value)) {
 			return FALSE;
 		}
