@@ -32,8 +32,6 @@
 
 | 禁止対象 | 理由 |
 | --- | --- |
-| position / z-index | Wikiレイアウト上に重ねることを防ぐため |
-| vw / vh 等のビューポート単位 | ウィンドウ全体に広がることを防ぐため |
 | url(...) を含む値 | 外部リソース参照を防ぐため（background-image を含む） |
 | expression(...) / javascript: / @import / \ / /* | スクリプト注入を防ぐため |
 
