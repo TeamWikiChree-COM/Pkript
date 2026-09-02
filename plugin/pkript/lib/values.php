@@ -1,5 +1,5 @@
 <?php
-// $Id: values.php,v 0.4 2026/09/01 22:34:53 WikiChree.COM Team Exp $
+// $Id: values.php,v 0.5 2026/09/02 22:09:38 WikiChree.COM Team Exp $
 
 /**
  * Pkript runtime - value types
@@ -27,6 +27,21 @@ class Pkript_Arr {
 /** An object value (`{ a: 1 }`, plus `e` and the API namespaces). */
 class Pkript_Obj {
 	public $props;
+
+	/**
+	 * The value type this object stands for, for the few namespaces that
+	 * name one: `Array`, `Object`, `Number`. Empty for every other object,
+	 * which is what makes `x instanceof somethingElse` an error rather than
+	 * a quietly false answer. See Pkript_Interpreter::isInstanceOf().
+	 */
+	public $brand = '';
+
+	/**
+	 * The builtin to run when the object itself is called, for the namespaces
+	 * that are also a function: `Number(x)` converts, `Number.isInteger(x)`
+	 * tests. Empty for every other object, which is then not callable.
+	 */
+	public $call = '';
 
 	public function __construct($props = array()) {
 		// Accept plain PHP arrays from the runtime side and wrap them

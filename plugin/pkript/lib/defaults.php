@@ -1,5 +1,5 @@
 <?php
-// $Id: defaults.php,v 0.4 2026/09/01 22:34:53 WikiChree.COM Team Exp $
+// $Id: defaults.php,v 0.5 2026/09/02 22:09:38 WikiChree.COM Team Exp $
 
 /**
  * Pkript runtime - default settings
@@ -77,7 +77,7 @@ if (!defined('PKRIPT_ALLOW_DATA'))
 // so that a cache written by an older runtime is ignored rather than
 // misread. Bump it when that shape changes.
 if (!defined('PKRIPT_AST_VERSION'))
-	define('PKRIPT_AST_VERSION', 2);
+	define('PKRIPT_AST_VERSION', 3);
 if (!defined('PKRIPT_MAX_IMPORTS'))
 	define('PKRIPT_MAX_IMPORTS', 16);
 if (!defined('PKRIPT_MAX_IMPORT_DEPTH'))

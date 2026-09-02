@@ -1,5 +1,5 @@
 <?php
-// $Id: package_core.php,v 0.4 2026/09/01 22:34:53 WikiChree.COM Team Exp $
+// $Id: package_core.php,v 0.5 2026/09/02 22:09:38 WikiChree.COM Team Exp $
 
 /**
  * Pkript runtime - core package
@@ -27,6 +27,10 @@ class Pkript_Package_Core extends Pkript_Package_Base {
 			'date' => 'Pkript_Std_Date',
 			'Math' => 'Pkript_Std_Math',
 			'Object' => 'Pkript_Std_Object',
+			// Named after value types, and separate from the modules holding
+			// those types' methods - see Pkript_Stdlib::namespaceClass()
+			'Array' => 'Pkript_Std_ArrayNs',
+			'Number' => 'Pkript_Std_NumberNs',
 			'data' => 'Pkript_Std_Data',
 			'console' => 'Pkript_Std_Console',
 		);
@@ -58,6 +62,12 @@ class Pkript_Package_Core extends Pkript_Package_Base {
 			'parseFloat' => 'lang.parseFloat',
 			'isNaN' => 'lang.isNaN',
 			'isFinite' => 'lang.isFinite',
+
+			// What `throw` is usually given, and what a caught runtime error
+			// already looks like: an object with a name and a message
+			'Error' => 'lang.Error',
+			'TypeError' => 'lang.TypeError',
+			'RangeError' => 'lang.RangeError',
 		);
 	}
 

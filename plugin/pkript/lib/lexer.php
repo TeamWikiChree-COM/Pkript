@@ -1,5 +1,5 @@
 <?php
-// $Id: lexer.php,v 0.4 2026/09/01 22:34:53 WikiChree.COM Team Exp $
+// $Id: lexer.php,v 0.5 2026/09/02 22:09:38 WikiChree.COM Team Exp $
 
 /**
  * Pkript runtime - lexer
@@ -41,53 +41,40 @@ class Pkript_Lexer {
 		'default' => 1,
 		'try' => 1,
 		'catch' => 1,
+		'finally' => 1,
+		'throw' => 1,
+		'typeof' => 1,
+		'instanceof' => 1,
+		'in' => 1,
+		'void' => 1,
 		// NOTE: 'of' (for..of) stays a normal identifier so scripts can use it
-		// as a variable name; the parser recognises it by position.
+		// as a variable name; the parser recognises it by position. 'in' has
+		// to be a keyword because it is also a binary operator, so for..in
+		// picks it out by position instead - see Pkript_Parser::parseFor().
 	);
 
 	const IDENT_CHARS = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_$';
 	const DIGITS = '0123456789';
+	// The whitespace JavaScript allows between tokens: space, tab,
+	// newline, and the vertical tab and form feed nobody writes on
+	// purpose but a copied-in page sometimes carries. Spelled out
+	// rather than typed literally, so the two invisible ones can be
+	// read here instead of guessed at.
 	const SPACE_CHARS = " 	
 ";
 
-	// Longest first
+	// Grouped by first character and tried longest first; see readOperator().
 	private static $operators = array(
-		'===',
-		'!==',
-		'==',
-		'!=',
-		'<=',
-		'>=',
-		'&&',
-		'||',
-		'++',
-		'--',
-		'=>',
-		'+=',
-		'-=',
-		'*=',
-		'/=',
-		'%=',
-		'+',
-		'-',
-		'*',
-		'/',
-		'%',
-		'=',
-		'!',
-		'<',
-		'>',
-		'(',
-		')',
-		'{',
-		'}',
-		'[',
-		']',
-		',',
-		';',
-		'.',
-		':',
-		'?',
+		// four characters
+		'>>>=',
+		// three
+		'...', '===', '!==', '**=', '<<=', '>>=', '&&=', '||=', '??=', '>>>',
+		// two
+		'==', '!=', '<=', '>=', '&&', '||', '??', '++', '--', '=>',
+		'+=', '-=', '*=', '/=', '%=', '&=', '|=', '^=', '**', '<<', '>>', '?.',
+		// one
+		'+', '-', '*', '/', '%', '=', '!', '<', '>', '&', '|', '^', '~',
+		'(', ')', '{', '}', '[', ']', ',', ';', '.', ':', '?',
 	);
 
 	public function __construct($src, $script, $line = 1, $col = 1) {
@@ -194,6 +181,13 @@ class Pkript_Lexer {
 		foreach (self::$operators as $op) {
 			$index[$op[0]][] = $op;
 		}
+		// Longest first within each bucket, so '>>>=' is never read as '>'
+		foreach ($index as &$bucket) {
+			usort($bucket, function ($a, $b) {
+				return strlen($b) - strlen($a);
+			});
+		}
+		unset($bucket);
 		return $index;
 	}
 
@@ -277,26 +271,69 @@ class Pkript_Lexer {
 		return $out;
 	}
 
-	/** One backslash escape, from the backslash. */
+	/** The one-character escapes, as JavaScript spells them. */
+	private static $simpleEscapes = array(
+		'n' => "\n",
+		't' => "\t",
+		'r' => "\r",
+		'b' => "\x08",
+		'f' => "\x0C",
+		'v' => "\x0B",
+		'0' => "\0",
+		'\\' => '\\',
+		'"' => '"',
+		"'" => "'",
+		'/' => '/',
+	);
+
+	/**
+	 * One backslash escape, from the backslash.
+	 *
+	 * Besides the one-character forms there are the two numeric ones,
+	 * `\xNN` and `\uNNNN` / `\u{N...}`, which name a code point and are
+	 * encoded into the source encoding here, so the rest of the runtime only
+	 * ever sees ordinary text. A backslash before a newline is a line
+	 * continuation and contributes nothing, as in JavaScript.
+	 */
 	private function readEscape() {
 		$this->advance();
 		if ($this->pos >= $this->len)
 			return '';
 
-		static $simple = NULL;
-		if ($simple === NULL) {
-			$simple = array(
-				'n' => "\n",
-				't' => "\t",
-				'r' => "\r",
-				'\\' => '\\',
-				'"' => '"',
-				"'" => "'",
-			);
-		}
-
 		$esc = $this->src[$this->pos];
-		if (!isset($simple[$esc])) {
+
+		// A backslash at the end of a line joins it to the next one
+		if ($esc === "\n") {
+			$this->advance();
+			return '';
+		}
+		if ($esc === 'x') {
+			$this->advance();
+			return $this->readCodePoint(2, 2, '\x needs two hex digits');
+		}
+		if ($esc === 'u') {
+			$this->advance();
+			if ($this->pos < $this->len && $this->src[$this->pos] === '{') {
+				$this->advance();
+				$text = $this->readCodePoint(1, 6,
+					'\u{} needs one to six hex digits');
+				if ($this->pos >= $this->len || $this->src[$this->pos] !== '}') {
+					throw new Pkript_Error('\u{ is not closed',
+						$this->script, $this->line, $this->col);
+				}
+				$this->advance();
+				return $text;
+			}
+			return $this->readCodePoint(4, 4, '\u needs four hex digits');
+		}
+		// `\0` followed by a digit would be an octal escape, which JavaScript
+		// only has in sloppy mode and which we do not have at all
+		if ($esc === '0' && $this->pos + 1 < $this->len &&
+			ctype_digit($this->src[$this->pos + 1])) {
+			throw new Pkript_Error('Octal escapes are not supported',
+				$this->script, $this->line, $this->col);
+		}
+		if (!isset(self::$simpleEscapes[$esc])) {
 			throw new Pkript_Error(
 				'Invalid escape \\' . $esc,
 				$this->script,
@@ -305,7 +342,41 @@ class Pkript_Lexer {
 			);
 		}
 		$this->advance();
-		return $simple[$esc];
+		return self::$simpleEscapes[$esc];
+	}
+
+	/**
+	 * Hex digits naming a code point, encoded into PKRIPT_ENCODING.
+	 *
+	 * @param int $min fewest digits accepted, $max the most
+	 * @return string the character, as text in the script's own encoding
+	 */
+	private function readCodePoint($min, $max, $what) {
+		$n = strspn($this->src, '0123456789abcdefABCDEF', $this->pos, $max);
+		if ($n < $min) {
+			throw new Pkript_Error($what, $this->script, $this->line, $this->col);
+		}
+		$code = hexdec(substr($this->src, $this->pos, $n));
+		$this->advance($n);
+
+		// A lone surrogate names no character. JavaScript would keep it, but
+		// nothing downstream here can hold one, so it is refused rather than
+		// silently turned into U+FFFD.
+		if ($code >= 0xD800 && $code <= 0xDFFF) {
+			throw new Pkript_Error(
+				'That escape names a surrogate, not a character',
+				$this->script, $this->line, $this->col);
+		}
+
+		$utf8 = $code <= 0x10FFFF ? mb_chr($code, 'UTF-8') : FALSE;
+		if ($utf8 === FALSE) {
+			throw new Pkript_Error('That escape names no character',
+				$this->script, $this->line, $this->col);
+		}
+		if (PKRIPT_ENCODING === 'UTF-8')
+			return $utf8;
+		$out = @mb_convert_encoding($utf8, PKRIPT_ENCODING, 'UTF-8');
+		return $out === FALSE ? '?' : $out;
 	}
 
 	/**
@@ -519,12 +590,17 @@ class Pkript_Lexer {
 
 		foreach ($index[$first] as $op) {
 			$n = strlen($op);
-			if ($n === 1 || substr($this->src, $this->pos, $n) === $op) {
-				// An operator never contains a newline
-				$this->pos += $n;
-				$this->col += $n;
-				return $op;
+			if ($n > 1 && substr($this->src, $this->pos, $n) !== $op)
+				continue;
+			// `a ? .5 : b` is a conditional, not optional chaining
+			if ($op === '?.' && $this->pos + 2 < $this->len &&
+				ctype_digit($this->src[$this->pos + 2])) {
+				continue;
 			}
+			// An operator never contains a newline
+			$this->pos += $n;
+			$this->col += $n;
+			return $op;
 		}
 		return NULL;
 	}

@@ -1,5 +1,5 @@
 <?php
-// $Id: pkript.inc.php,v 0.4 2026/09/01 22:34:53 WikiChree.COM Team Exp $
+// $Id: pkript.inc.php,v 0.5 2026/09/02 22:09:38 WikiChree.COM Team Exp $
 
 /**
  * @link https://wikichree.com/guide/?Pkript
@@ -120,7 +120,7 @@ if (!defined('PKRIPT_AST_CACHE'))
 	define('PKRIPT_AST_CACHE', 1);
 
 // Bump when the shape of the AST changes, so old cache files are ignored
-define('PKRIPT_AST_VERSION', 2);
+define('PKRIPT_AST_VERSION', 3);
 
 // --- limits, per request ---
 

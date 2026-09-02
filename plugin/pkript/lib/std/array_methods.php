@@ -1,5 +1,5 @@
 <?php
-// $Id: array_methods.php,v 0.4 2026/09/01 22:34:53 WikiChree.COM Team Exp $
+// $Id: array_methods.php,v 0.5 2026/09/02 22:09:38 WikiChree.COM Team Exp $
 
 /**
  * Pkript runtime - Array methods
@@ -22,6 +22,7 @@ class Pkript_Std_ArrayMethods extends Pkript_Std_Methods {
 			'forEach', 'some', 'every', 'reduce', 'reduceRight', 'sort',
 			'at', 'lastIndexOf', 'fill', 'flat', 'flatMap',
 			'findLast', 'findLastIndex', 'splice', 'toString',
+			'keys', 'values', 'entries',
 		);
 	}
 
@@ -117,6 +118,19 @@ class Pkript_Std_ArrayMethods extends Pkript_Std_Methods {
 
 			case 'toString':
 				return $this->join($arr, array(), $node);
+
+			// JavaScript answers these with iterators, which this language
+			// has no other use for; an array is what for..of wants anyway
+			case 'keys':
+				return new Pkript_Arr(array_keys($arr->items));
+			case 'values':
+				return new Pkript_Arr($arr->items);
+
+			case 'entries':
+				$out = array();
+				foreach ($arr->items as $i => $item)
+					$out[] = new Pkript_Arr(array($i, $item));
+				return new Pkript_Arr($this->rt->checkArray($out, $node));
 		}
 	}
 

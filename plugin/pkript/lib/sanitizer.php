@@ -1,5 +1,5 @@
 <?php
-// $Id: sanitizer.php,v 0.4 2026/09/01 22:34:53 WikiChree.COM Team Exp $
+// $Id: sanitizer.php,v 0.5 2026/09/02 22:09:38 WikiChree.COM Team Exp $
 
 /**
  * Pkript runtime - HTML sanitizer
@@ -340,13 +340,8 @@ class Pkript_Sanitizer {
 
 		$root = $doc->getElementById('pkript-root');
 		if ($root === NULL) {
-			// getElementById needs a DTD-declared id; fall back to a manual search
-			foreach ($doc->getElementsByTagName('div') as $div) {
-				if ($div->getAttribute('id') === 'pkript-root') {
-					$root = $div;
-					break;
-				}
-			}
+			// getElementById needs a DTD-declared id; fall back to a search
+			$root = self::divById($doc, 'pkript-root');
 		}
 		if ($root === NULL)
 			return pkript_htmlsc($html);
@@ -405,6 +400,23 @@ class Pkript_Sanitizer {
 		}
 	}
 
+	/**
+	 * The div carrying $id, which is the wrapper we put there ourselves.
+	 *
+	 * getElementsByTagName() is typed as holding plain nodes rather than
+	 * elements, so the check is written out: it says what is being looked for
+	 * and keeps a namespace node from ever reaching getAttribute().
+	 *
+	 * @return DOMElement|NULL
+	 */
+	private static function divById($doc, $id) {
+		foreach ($doc->getElementsByTagName('div') as $div) {
+			if ($div instanceof DOMElement && $div->getAttribute('id') === $id)
+				return $div;
+		}
+		return NULL;
+	}
+
 	/** Parse trusted HTML into a fragment belonging to $doc. */
 	private static function importHtml($doc, $html) {
 		$tmp = new DOMDocument();
@@ -418,13 +430,7 @@ class Pkript_Sanitizer {
 		if (!$ok)
 			return $out;
 
-		$holder = NULL;
-		foreach ($tmp->getElementsByTagName('div') as $div) {
-			if ($div->getAttribute('id') === 'pkript-frag') {
-				$holder = $div;
-				break;
-			}
-		}
+		$holder = self::divById($tmp, 'pkript-frag');
 		if ($holder === NULL)
 			return $out;
 

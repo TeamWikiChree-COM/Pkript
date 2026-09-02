@@ -1,5 +1,5 @@
 <?php
-// $Id: wiki_writer.php,v 0.4 2026/09/01 22:34:53 WikiChree.COM Team Exp $
+// $Id: wiki_writer.php,v 0.5 2026/09/02 22:09:38 WikiChree.COM Team Exp $
 
 /**
  * Pkript runtime - wiki page writing

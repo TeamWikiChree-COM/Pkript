@@ -1,5 +1,5 @@
 <?php
-// $Id: pks.inc.php,v 0.4 2026/09/01 22:34:53 WikiChree.COM Team Exp $
+// $Id: pks.inc.php,v 0.5 2026/09/02 22:09:38 WikiChree.COM Team Exp $
 
 /**
  * @link https://wikichree.com/guide/?PkriptRunner

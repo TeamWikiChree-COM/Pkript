@@ -1,5 +1,5 @@
 <?php
-// $Id: lang.php,v 0.4 2026/09/01 22:34:53 WikiChree.COM Team Exp $
+// $Id: lang.php,v 0.5 2026/09/02 22:09:38 WikiChree.COM Team Exp $
 
 /**
  * Pkript runtime - conversions and argument helpers
@@ -22,6 +22,7 @@ class Pkript_Std_Lang extends Pkript_Std_Module {
 			'String', 'Number', 'Boolean',
 			'parseInt', 'parseFloat', 'isNaN', 'isFinite',
 			'func_get_args', 'func_num_args', 'func_get_arg',
+			'Error', 'TypeError', 'RangeError',
 		);
 	}
 
@@ -48,6 +49,15 @@ class Pkript_Std_Lang extends Pkript_Std_Module {
 				if (!is_int($v) && !is_float($v))
 					return FALSE;
 				return !is_nan((float) $v) && is_finite((float) $v);
+
+			// `throw Error('...')`, with or without a `new` that this
+			// language does not have. The result is a plain object, which is
+			// what a catch binding gets either way.
+			case 'Error':
+			case 'TypeError':
+			case 'RangeError':
+				return Pkript_Interpreter::errorValue($name,
+					$this->strArg($args, 0, ''));
 
 			case 'func_get_args':
 				return new Pkript_Arr($this->rt->currentCallArgs());

@@ -1,5 +1,5 @@
 <?php
-// $Id: registry.php,v 0.4 2026/09/01 22:34:53 WikiChree.COM Team Exp $
+// $Id: registry.php,v 0.5 2026/09/02 22:09:38 WikiChree.COM Team Exp $
 
 /**
  * Pkript runtime - standard library registry
@@ -81,6 +81,11 @@ class Pkript_Stdlib {
 		return $this->constants;
 	}
 
+	/** @return array bare global name -> the namespaced member it stands for. */
+	public function globalTargets() {
+		return $this->globals;
+	}
+
 	/** The name a script sees for a value's type, or NULL if it has no methods. */
 	public static function typeOf($value) {
 		if (is_string($value))
@@ -111,14 +116,14 @@ class Pkript_Stdlib {
 
 		if ($dot !== FALSE) {
 			$ns = substr($canonical, 0, $dot);
-			$class = $this->classFor($ns);
+			$class = $this->namespaceClass($ns);
 			// members() is the gate: reject anything it does not list, so a
 			// module's call() is never reached with a name it did not
 			// publish. A $globals entry pointing at a namespace that does not
 			// exist fails here too, rather than fatally later.
 			$member = substr($canonical, $dot + 1);
 			if ($class !== NULL && in_array($member, $class::members(), TRUE))
-				return $this->module($ns)->call($member, $args, $node);
+				return $this->module($class)->call($member, $args, $node);
 		}
 		$this->rt->fail('Undefined builtin ' . $name, $node);
 	}
@@ -133,29 +138,33 @@ class Pkript_Stdlib {
 		if (!in_array($name, $class::methods(), TRUE)) {
 			$this->rt->fail($label . '.' . $name . ' is not a function', $node);
 		}
-		return $this->module($label)->call($recv, $name, $args, $node);
+		return $this->module($class)->call($recv, $name, $args, $node);
 	}
 
-	/** @return string|NULL the class registered under $key */
-	private function classFor($key) {
+	/**
+	 * The class publishing a namespace.
+	 *
+	 * Namespaces and types are kept apart on purpose, even though a few names
+	 * are in both: `Array` is a namespace holding Array.isArray() and the
+	 * label under which an array value finds its methods, and the two are not
+	 * the same module. Which table a lookup reads is decided by the caller,
+	 * which knows whether it is resolving `Array.x` or `someArray.x`.
+	 */
+	private function namespaceClass($key) {
 		if (isset($this->namespaces[$key]))
 			return $this->namespaces[$key];
-		if (isset($this->types[$key]))
-			return $this->types[$key];
 		return $key === 'lang' ? self::$langModule : NULL;
 	}
 
 	/**
 	 * Built on first use, then kept for the run - so a script that never
-	 * touches wiki.* never constructs the wiki module. Only reached once a
-	 * call has passed the members() / methods() gate, so $key is always one
-	 * classFor() knows.
+	 * touches wiki.* never constructs the wiki module. Keyed by class name,
+	 * because two entries may name the same class and one class may sit in
+	 * both tables under one name.
 	 */
-	private function module($key) {
-		if (!isset($this->modules[$key])) {
-			$class = $this->classFor($key);
-			$this->modules[$key] = new $class($this->rt);
-		}
-		return $this->modules[$key];
+	private function module($class) {
+		if (!isset($this->modules[$class]))
+			$this->modules[$class] = new $class($this->rt);
+		return $this->modules[$class];
 	}
 }

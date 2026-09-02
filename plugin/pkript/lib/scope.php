@@ -1,5 +1,5 @@
 <?php
-// $Id: scope.php,v 0.4 2026/09/01 22:34:53 WikiChree.COM Team Exp $
+// $Id: scope.php,v 0.5 2026/09/02 22:09:38 WikiChree.COM Team Exp $
 
 /**
  * Pkript runtime - scopes and signals
@@ -35,6 +35,41 @@ class Pkript_Redirect extends Exception {
 	public function __construct($page) {
 		parent::__construct('redirect');
 		$this->page = $page;
+	}
+}
+
+/**
+ * A value a script threw with `throw`.
+ *
+ * It carries the value itself rather than a message, because `throw` takes
+ * any value at all - an object with a message, a string, a number - and
+ * `catch` has to hand back exactly what was thrown. A Pkript_Error rather
+ * than a bare Exception so that an uncaught one is reported like every other
+ * script error, with the place it happened.
+ */
+class Pkript_Throw extends Pkript_Error {
+	public $value;
+
+	public function __construct($value, $script = '', $line = 0, $col = 0) {
+		parent::__construct(
+			'Uncaught ' . self::describe($value), $script, $line, $col);
+		$this->value = $value;
+	}
+
+	/**
+	 * How an uncaught value reads in the message. An object with a message
+	 * shows it, the way a browser console shows `Error: ...`; anything else
+	 * shows as the text it converts to.
+	 */
+	private static function describe($value) {
+		if ($value instanceof Pkript_Obj && isset($value->props['message'])) {
+			$name = isset($value->props['name'])
+				? Pkript_Interpreter::toStringValue($value->props['name']) : 'Error';
+			return $name . ': ' .
+				Pkript_Interpreter::toStringValue($value->props['message']);
+		}
+		$text = Pkript_Interpreter::toStringValue($value);
+		return $text === '' ? Pkript_Interpreter::typeName($value) : $text;
 	}
 }
 
