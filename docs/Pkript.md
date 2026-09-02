@@ -16,6 +16,7 @@ PHPへの直接アクセスを遮断し、出力もサニタイズされるた�
 - [Pkript/サンプル](Pkript_%E3%82%B5%E3%83%B3%E3%83%97%E3%83%AB.md) - 実用スクリプト集
 - [Pkript/エラー一覧](Pkript_%E3%82%A8%E3%83%A9%E3%83%BC%E4%B8%80%E8%A6%A7.md) - エラーメッセージと対処法
 - [Pkript/設定](Pkript_%E8%A8%AD%E5%AE%9A.md) - 設定オプション、直接呼び出し、セキュリティ
+- [PkriptRunner](PkriptRunner.md) - #pks / &amp;pks; でコードをその場に書いて実行する
 
 ## クイックスタート
 
@@ -50,3 +51,5 @@ Wikiページから呼び出します。
 | #pkript(名前, 引数) | plugin_◯◯_convert(e) | ブロック要素（段落など） |
 | &amp;pkript(名前, 引数); | plugin_◯◯_inline(e) | インライン要素（行内） |
 | ?plugin=pkript&amp;script=名前 | plugin_◯◯_action(e) | アクション（単独ページ・フォーム処理） |
+
+スクリプトに名前をつけず、ページ本文にコードを直接書いて実行することもできる（[PkriptRunner](PkriptRunner.md)）。

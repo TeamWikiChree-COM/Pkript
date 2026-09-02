@@ -303,7 +303,7 @@ plugin/pkript/script/highlight.js
 ```js
 // Pkript: Syntax Highlighter
 // Usage:
-//   #pkript(highlight){{
+//   #highlight{{
 //   function hello(name) {
 //       console.log("Hello, " + name);
 //   }
@@ -457,7 +457,7 @@ function plugin_highlight_convert(e) {
 
 使い方:
 ```js
-#pkript(highlight){{
+#highlight{{
 function hello(name) {
     console.log("Hello, " + name);
 }
